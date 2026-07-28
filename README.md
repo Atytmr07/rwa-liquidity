@@ -110,7 +110,7 @@ indistinguishable.
 - [x] **1** Skeleton, tooling, CI
 - [x] **2** Normalized schema and parquet cache
 - [x] **3** DeFiLlama adapter
-- [ ] **4** Metrics layer, all three volume modes, provenance
+- [x] **4** Metrics layer, all three volume modes, provenance
 - [ ] **5** rwa.xyz and Dune adapters
 - [ ] **6** Cross-source reconciliation
 - [ ] **7** CLI, export, demo mode
