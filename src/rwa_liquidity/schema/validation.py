@@ -30,7 +30,7 @@ import polars as pl
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ["SchemaValidationError", "validate"]
+__all__ = ["SchemaValidationError", "polars_schema", "validate"]
 
 # How many offending values to quote per problem. Enough to see a pattern,
 # few enough that the message stays readable in a terminal.
@@ -59,8 +59,13 @@ class SchemaValidationError(Exception):
         super().__init__("\n".join([header, *(f"  - {problem}" for problem in problems)]))
 
 
-def _expected_dtypes(model: type[pa.DataFrameModel]) -> Mapping[str, pl.DataType]:
-    """Return the polars dtype each column of `model` is declared as."""
+def polars_schema(model: type[pa.DataFrameModel]) -> Mapping[str, pl.DataType]:
+    """Return the polars dtype each column of `model` is declared as.
+
+    Adapters use this to build their output frames, so an empty result and a
+    populated one have identical dtypes and a schema change cannot leave an
+    adapter constructing last week's columns.
+    """
     schema = model.to_schema()
     dtypes: dict[str, pl.DataType] = {}
     for name, column in schema.columns.items():
@@ -168,7 +173,7 @@ def validate(
         SchemaValidationError: If the frame violates the schema in any way.
     """
     frame_name = model.__name__
-    expected = _expected_dtypes(model)
+    expected = polars_schema(model)
 
     # Run the pre-checks first and bail before pandera, whose failure modes for
     # these two cases are unhelpful (see the module docstring).
