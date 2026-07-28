@@ -57,7 +57,8 @@ Full formulas, unit conventions, exclusion rules, and caveats live in
 | [DeFiLlama](https://defillama.com) | TVL-style figures, used for cross-validation | no |
 
 Where sources disagree on the same figure, the package reports the variance
-rather than silently picking one.
+rather than silently picking one. What each source actually supplies, and what is
+wrong with it, is written up in [`docs/data-sources.md`](docs/data-sources.md).
 
 ## Install
 
@@ -107,8 +108,8 @@ indistinguishable.
 ## Roadmap
 
 - [x] **1** Skeleton, tooling, CI
-- [ ] **2** Normalized schema and parquet cache
-- [ ] **3** DeFiLlama adapter
+- [x] **2** Normalized schema and parquet cache
+- [x] **3** DeFiLlama adapter
 - [ ] **4** Metrics layer, all three volume modes, provenance
 - [ ] **5** rwa.xyz and Dune adapters
 - [ ] **6** Cross-source reconciliation
