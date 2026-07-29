@@ -97,6 +97,7 @@ class CachedJSONClient:
         source: str,
         cache: ParquetCache | None = None,
         client: httpx.Client | None = None,
+        headers: Mapping[str, str] | None = None,
         default_ttl: timedelta | None = timedelta(hours=12),
     ) -> None:
         """Create a client for one adapter.
@@ -107,6 +108,9 @@ class CachedJSONClient:
             client: An httpx client, injected by tests to supply a mock
                 transport. Defaults to one configured with a timeout, a retrying
                 connection transport, and an identifying user agent.
+            headers: Extra headers, typically authentication. Applied only to a
+                client this instance creates; an injected client is left alone
+                so a test's transport is never handed a real credential.
             default_ttl: How long an entry stays fresh when the caller does not
                 say. Twelve hours suits the daily-ish cadence at which these
                 providers actually update.
@@ -115,14 +119,18 @@ class CachedJSONClient:
         self.cache = cache if cache is not None else ParquetCache()
         self.default_ttl = default_ttl
         self._owns_client = client is None
-        self._client = client if client is not None else self._build_client()
+        self._client = client if client is not None else self._build_client(headers)
 
     @staticmethod
-    def _build_client() -> httpx.Client:
+    def _build_client(headers: Mapping[str, str] | None = None) -> httpx.Client:
         return httpx.Client(
             timeout=_DEFAULT_TIMEOUT,
             follow_redirects=True,
-            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+            headers={
+                "User-Agent": _USER_AGENT,
+                "Accept": "application/json",
+                **(dict(headers) if headers else {}),
+            },
             transport=httpx.HTTPTransport(retries=_DEFAULT_CONNECT_RETRIES),
         )
 
