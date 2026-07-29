@@ -113,7 +113,7 @@ indistinguishable.
 - [x] **4** Metrics layer, all three volume modes, provenance
 - [x] **5** rwa.xyz and Dune adapters
 - [x] **6** Cross-source reconciliation
-- [ ] **7** CLI, export, demo mode
+- [x] **7** CLI, export, demo mode
 - [ ] **8** Methodology docs and worked example
 
 ## License
