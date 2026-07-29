@@ -19,28 +19,36 @@ from rwa_liquidity.sources.base import (
     SourceFetchError,
     UnsupportedCapabilityError,
 )
+from rwa_liquidity.sources.classify import classify_transfers
 from rwa_liquidity.sources.defillama import (
     DeFiLlamaPricesSource,
     DeFiLlamaProtocolTvlSource,
 )
+from rwa_liquidity.sources.dune import HOLDER_COLUMNS, TRANSFER_COLUMNS, DuneSource
 from rwa_liquidity.sources.http import CachedJSONClient, JSONResponse
 from rwa_liquidity.sources.registry import (
     RegistryEntry,
     RegistryError,
     load_defillama_registry,
 )
+from rwa_liquidity.sources.rwa_xyz import RwaXyzSource
 
 __all__ = [
+    "HOLDER_COLUMNS",
+    "TRANSFER_COLUMNS",
     "CachedJSONClient",
     "Capability",
     "DeFiLlamaPricesSource",
     "DeFiLlamaProtocolTvlSource",
+    "DuneSource",
     "JSONResponse",
     "RegistryEntry",
     "RegistryError",
+    "RwaXyzSource",
     "Source",
     "SourceError",
     "SourceFetchError",
     "UnsupportedCapabilityError",
+    "classify_transfers",
     "load_defillama_registry",
 ]
