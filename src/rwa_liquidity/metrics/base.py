@@ -219,18 +219,29 @@ def active_addresses(transfers: pl.DataFrame) -> set[str]:
 
 
 def latest_snapshot(snapshots: pl.DataFrame, window: Window) -> dict[str, object]:
-    """Return the most recent snapshot row at or before the end of `window`.
+    """Return the state of the asset at the end of `window`.
 
     Metrics are defined against the state at the end of the observation period,
-    so a snapshot taken after the window closed would describe a different
-    world than the transfers being measured.
+    so a snapshot taken after the window closed would describe a different world
+    than the transfers being measured.
+
+    Where several sources describe the asset, each field takes the most recent
+    non-null value rather than every field coming from one winning row. Sources
+    publish different subsets -- DeFiLlama has no holder counts, an on-chain
+    source has no stated market value -- so picking a single row would discard
+    fields that another source did report, and which row won would depend on an
+    unstable sort. Ties are broken by source name so the result is deterministic.
+
+    This is *not* the package deciding which source is right. Where two sources
+    report the same field differently, `rwa_liquidity.reconcile` reports the
+    disagreement; this function only ensures a metric has something to divide by.
 
     Args:
         snapshots: An `AssetSnapshot` frame for one asset.
         window: The observation period.
 
     Returns:
-        The chosen row as a mapping.
+        The merged state as a mapping.
 
     Raises:
         MetricInputError: If no snapshot falls at or before the window's end.
@@ -241,7 +252,14 @@ def latest_snapshot(snapshots: pl.DataFrame, window: Window) -> dict[str, object
             f"no snapshot at or before {window.end.isoformat()}; the earliest available "
             f"is {snapshots['as_of'].min()!r}"
         )
-    return eligible.sort("as_of").tail(1).row(0, named=True)
+
+    ordered = eligible.sort(["as_of", "source"]).to_dicts()
+    merged: dict[str, object] = dict(ordered[-1])
+    for row in reversed(ordered[:-1]):
+        for key, value in row.items():
+            if merged.get(key) is None and value is not None:
+                merged[key] = value
+    return merged
 
 
 def sources_of(*frames: pl.DataFrame) -> tuple[str, ...]:
