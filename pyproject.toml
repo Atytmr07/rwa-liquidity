@@ -55,7 +55,10 @@ rwa-liquidity = "rwa_liquidity.cli:app"
 
 [dependency-groups]
 dev = [
+    "ipykernel>=7.3.0",
     "mypy>=1.14",
+    "nbclient>=0.11.0",
+    "nbformat>=5.10.4",
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.9",

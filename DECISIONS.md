@@ -4,11 +4,69 @@ Every non-trivial architectural choice, with its alternatives and the reason it
 went the way it did. Newest first. The point of this file is to make the design
 defensible in conversation months from now.
 
-> The entries dated 2026-07-29 under "Metric definitions" and "Data model" were
-> decided without review, on instruction to keep building rather than wait for
-> answers. Each is recorded with the alternative that was rejected, and every one
-> of them is a one-line change to reverse. They are the entries to read first if
-> the results ever look wrong.
+> Most entries here were decided without review, on instruction to keep
+> building rather than wait for answers. Each records the alternative that was
+> rejected, and every one is a small change to reverse. They are the entries to
+> read first if the results ever look wrong.
+>
+> The two most consequential: turnover is token-denominated by default rather
+> than USD-denominated, and `secondary_only` is the default volume mode.
+
+---
+
+## 2026-07-29 -- The LaTeX writer is hand-written, not `pandas.to_latex`
+
+**Decided:** `export/writers.py` renders LaTeX itself, in about forty lines.
+
+**Alternatives:** `pandas.to_latex`; `tabulate`.
+
+**Why:** The output of this package is meant for a paper, and a table going into
+a paper needs control over column alignment, significant figures, and caption.
+`to_latex` gives a table whose formatting then has to be fought, and it would
+promote pandas from an optional extra to a real dependency to get there.
+
+Two details that are easy to get wrong and are therefore tested: LaTeX special
+characters are escaped, because asset uids and source names contain underscores
+and an unescaped table simply fails to compile; and an undefined metric renders
+as `--` rather than a blank cell, because a blank reads as an oversight while
+`--` reads as a result.
+
+---
+
+## 2026-07-29 -- `latest_snapshot` merges across sources field by field
+
+**Decided:** when several sources describe an asset, each field takes the most
+recent non-null value, with ties broken by source name.
+
+**Alternatives:** take the single most recent row; require the caller to pick a
+source.
+
+**Why:** Sources publish different subsets. DeFiLlama has no holder counts; an
+on-chain source has no stated market value. Taking one winning row discarded
+fields another source did report, and *which* row won depended on an unstable
+sort -- the demo dataset surfaced this immediately, losing a holder count and
+silently switching the supply denominator between runs.
+
+This is not the package deciding which source is right. Where two sources report
+the same field differently, `reconcile` reports the disagreement; this rule only
+ensures a metric has something to divide by, and it is mechanical rather than a
+judgement about provider quality.
+
+---
+
+## 2026-07-29 -- Live `report` refuses rather than printing a table of nulls
+
+**Decided:** `rwa-liquidity report` without `--demo` explains that live mode is
+not wired up and exits non-zero.
+
+**Alternatives:** run it anyway and print whatever the keyless sources can
+supply.
+
+**Why:** Every metric needs transfer-level data, which only the Dune adapter
+supplies, and that adapter has never run against its real API. A table where
+every column reads `n/a` looks like a broken install rather than an honest
+statement about what is and is not finished. Saying so in a sentence is more
+useful than demonstrating it in a grid.
 
 ---
 
