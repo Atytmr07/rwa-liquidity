@@ -1,8 +1,13 @@
 # Data sources
 
-What each provider actually supplies, and what is wrong with it. Everything here
-was verified against the live APIs on the date noted, not taken from
-documentation.
+What each provider actually supplies, and what is wrong with it.
+
+The DeFiLlama section was verified against the live API on the date noted rather
+than taken from documentation. The rwa.xyz and Dune sections were **not**: both
+are gated and no key was available, so those adapters were written against
+published documentation and every assumption that could not be checked is marked
+as such. The distinction is kept explicit throughout, because "the docs say" and
+"we saw it do this" are not the same claim.
 
 ## Summary
 
@@ -10,8 +15,14 @@ documentation.
 |---|---|---|---|---|
 | `defillama_prices` | yes | no | no | no |
 | `defillama_protocol_tvl` | yes | no | no | no |
-| `rwa_xyz` | planned | planned | planned | yes |
-| `dune` | no | planned | planned | yes |
+| `rwa_xyz` | yes* | no | no | yes |
+| `dune` | no | yes* | yes* | yes |
+
+\* **Implemented against published documentation, never run against the live API.**
+No key was available when they were written. Their tests use payloads built from
+the docs, which proves the adapter handles the documented shape and nothing more.
+The `network`-marked tests in `tests/test_sources_keyed_live.py` skip themselves
+when no credential is set; run them first once you have one.
 
 A source declares its capabilities rather than implementing every method and
 returning nothing for the parts it cannot serve. This matters: an empty transfer
@@ -109,14 +120,127 @@ from Dune.
 
 ## rwa.xyz
 
-*Not yet implemented (Phase 5).* Asset metadata, issuers, networks, market
-values, holder counts. Access is gated behind an API key.
+`GET https://api.rwa.xyz/v4/tokens`, authenticated with
+`Authorization: Bearer $RWA_XYZ_API_KEY`. Documentation read 2026-07-29.
+
+Filters, sorting and pagination travel in a single `query` parameter holding
+URL-encoded JSON: `{"pagination": {"page": 1, "perPage": 100}}`. Pages are
+1-based and `perPage` caps at 100.
+
+Three properties of the published schema shape the adapter:
+
+* **There is no symbol field.** Tokens carry `name` but no ticker, so `symbol`
+  is left null. Deriving a ticker from a fund's name would be inventing data.
+* **There is no observation timestamp.** The response says what a token is worth
+  but never when that was true. `as_of` therefore falls back to the retrieval
+  time, which is an *upper bound* on the figure's age rather than its age. Any
+  comparison of an rwa.xyz figure against a timestamped source inherits that
+  uncertainty, and reconciliation should treat small disagreements accordingly.
+* **Metrics are nested objects.** `market_value_dollar` is
+  `{"val": ..., "val_7d": ..., "chg_7d_pct": ...}`. Only `val` is read; taking
+  the object, or the wrong key, would put a week-old figure in a current column.
+
+### Unverified assumptions
+
+* **Chain naming.** The docs do not state the format of `network_name`. The
+  adapter lowercases and hyphenates it, so `Ethereum` becomes `ethereum` and
+  `BNB Chain` becomes `bnb-chain`. If the real values differ, the fix is a
+  `chain_aliases` entry rather than a code change. A wrong chain produces a key
+  that fails to match, not one that silently measures the wrong contract.
+* **Server-side filtering is not used.** The documented filter syntax could not
+  be checked, and a filter that silently matches nothing is indistinguishable
+  from an asset that does not exist. The adapter pages the token list and
+  matches client-side instead: more requests, but a checkable result, and the
+  responses are cached.
 
 ## Dune Analytics
 
-*Not yet implemented (Phase 5).* Transfer-level and holder-level on-chain data
-via saved queries. Requires an API key and the query IDs named in `.env.example`.
+`GET https://api.dune.com/api/v1/query/{query_id}/results`, authenticated with
+the `X-Dune-Api-Key` header. Documentation read 2026-07-29.
 
-This is the only planned source for the transfer data every volume metric needs,
-which is why the sample dataset shipped for demo mode is synthetic: no keyless
-source can produce a real one.
+This endpoint returns the **last cached execution** and does not trigger a new
+one, though it still consumes credits proportional to result size. Executing a
+query costs substantially more, so refreshing the underlying data is a
+deliberate act performed in Dune, not a side effect of asking this package a
+question.
+
+Pagination follows `next_offset` until it is absent.
+
+### The column contract
+
+Dune has no fixed schema; it runs whatever SQL you saved. The adapter therefore
+states what a saved query must return and fails immediately, naming the missing
+columns, if it does not. That matters more than it sounds: a query returning the
+wrong columns would otherwise produce an empty frame, which reads downstream as
+the finding "this asset did not trade".
+
+**Transfers query** must return `block_time`, `tx_hash`, `log_index`,
+`contract_address`, `from_address`, `to_address`, `amount`. `amount_usd` is
+optional; without it, USD-denominated metrics report themselves undefined rather
+than guessing a price. Amounts must be human-scaled, i.e. already divided by the
+token's decimals.
+
+```sql
+select
+    evt_block_time                          as block_time,
+    evt_tx_hash                             as tx_hash,
+    evt_index                               as log_index,
+    contract_address,
+    "from"                                  as from_address,
+    "to"                                    as to_address,
+    value / power(10, 6)                    as amount
+from erc20_ethereum.evt_Transfer
+where contract_address = 0x7712c34205737192402172409a8f7ccef8aa2aec
+  and evt_block_time >= now() - interval '90' day
+```
+
+**Holders query** must return `contract_address`, `address`, `balance`.
+`balance_usd` is optional.
+
+```sql
+with moves as (
+    select "to" as address, contract_address, cast(value as int256) as delta
+    from erc20_ethereum.evt_Transfer
+    where contract_address = 0x7712c34205737192402172409a8f7ccef8aa2aec
+    union all
+    select "from" as address, contract_address, -cast(value as int256) as delta
+    from erc20_ethereum.evt_Transfer
+    where contract_address = 0x7712c34205737192402172409a8f7ccef8aa2aec
+)
+select contract_address, address, sum(delta) / power(10, 6) as balance
+from moves
+group by 1, 2
+having sum(delta) > 0
+```
+
+Scope each query to one chain. The adapter filters rows to the asset and window
+client-side, so a single saved query can serve many assets and windows off one
+cached execution.
+
+### Timestamps
+
+Dune's JSON timestamp format has varied between plain ISO, a `Z` suffix, and a
+trailing ` UTC`. The adapter tries explicit formats in order and treats all three
+decorations as UTC. A value it cannot parse is an **error**, not a null: a
+dropped block time would silently remove a transfer from its observation window
+and lower every volume figure.
+
+Timestamps carrying an explicit non-UTC offset are not handled. Adjust the saved
+query to emit plain UTC.
+
+### Classifying issuance
+
+The adapter labels every transfer before the metrics layer sees it:
+
+1. Out of the zero address is a mint; into the zero address or a conventional
+   burn address is a burn.
+2. To or from an address listed in `issuer_addresses` is also primary. Many RWA
+   issuers mint one large tranche and then distribute from a treasury, so a
+   subscription looks like ordinary trading on chain.
+3. Anything else is secondary, and a zero-to-burn transfer is `unclassified`.
+
+**Configuring `issuer_addresses` is the single highest-leverage thing a user of
+this package does.** Get it wrong and treasury issuance is counted as trading,
+which is the exact overstatement the package exists to prevent. It cannot be
+detected with certainty, so the adapter warns whenever every transfer in a window
+classifies as secondary and no issuer addresses were supplied.

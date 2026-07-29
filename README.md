@@ -52,7 +52,7 @@ Full formulas, unit conventions, exclusion rules, and caveats live in
 
 | Source | Provides | Key required |
 |---|---|---|
-| [rwa.xyz](https://rwa.xyz) | asset metadata, issuers, networks, market values, holder counts | yes |
+| [rwa.xyz](https://rwa.xyz) | asset metadata, market values, holder counts | yes |
 | [Dune Analytics](https://dune.com) | transfer-level and holder-level on-chain data | yes |
 | [DeFiLlama](https://defillama.com) | TVL-style figures, used for cross-validation | no |
 
@@ -111,7 +111,7 @@ indistinguishable.
 - [x] **2** Normalized schema and parquet cache
 - [x] **3** DeFiLlama adapter
 - [x] **4** Metrics layer, all three volume modes, provenance
-- [ ] **5** rwa.xyz and Dune adapters
+- [x] **5** rwa.xyz and Dune adapters
 - [ ] **6** Cross-source reconciliation
 - [ ] **7** CLI, export, demo mode
 - [ ] **8** Methodology docs and worked example
