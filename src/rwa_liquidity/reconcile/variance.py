@@ -48,6 +48,10 @@ DEFAULT_TOLERANCE: Final = 0.01
 #: How far apart two observations may be and still be worth comparing.
 DEFAULT_STALENESS: Final = timedelta(days=1)
 
+#: Above this magnitude, figures are shown with thousands separators and no
+#: decimals rather than in scientific notation.
+_THOUSAND: Final = 1000
+
 
 @dataclass(frozen=True, slots=True)
 class Disagreement:
@@ -81,8 +85,8 @@ class Disagreement:
         """Return a one-line summary suitable for a terminal or a log."""
         caveat = " (observations too far apart to compare)" if self.stale else ""
         return (
-            f"{self.asset_uid} {self.field}: {self.source_a}={self.value_a:,.6g} vs "
-            f"{self.source_b}={self.value_b:,.6g} "
+            f"{self.asset_uid} {self.field}: {self.source_a}={_readable(self.value_a)} vs "
+            f"{self.source_b}={_readable(self.value_b)} "
             f"({self.relative_difference:.1%} apart){caveat}"
         )
 
@@ -139,6 +143,18 @@ class ReconciliationReport:
                 "stale": pl.Boolean(),
             },
         )
+
+
+def _readable(value: float) -> str:
+    """Format a figure for a human.
+
+    A general format renders market values in scientific notation, which is
+    exactly the wrong choice for a number a reader is meant to sanity-check
+    against a fund's published size.
+    """
+    if abs(value) >= _THOUSAND:
+        return f"{value:,.0f}"
+    return f"{value:,.4g}"
 
 
 def _relative_difference(a: float, b: float) -> float:

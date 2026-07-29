@@ -140,6 +140,13 @@ module = ["pandera.*"]
 follow_untyped_imports = true
 
 [[tool.mypy.overrides]]
+# pandas is an optional extra reached from exactly one function. Requiring
+# pandas-stubs in the dev group to type-check a single `to_pandas` call would
+# add a dependency for no benefit.
+module = ["pandas.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # pyarrow ships no py.typed marker and no stubs. It is used in exactly one place
 # (the cache's parquet metadata round trip), so the untyped surface is small and
 # bounded rather than spread through the package.

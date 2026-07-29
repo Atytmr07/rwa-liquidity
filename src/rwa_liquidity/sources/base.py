@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -76,10 +76,12 @@ class Source(ABC):
 
     #: Short, stable identifier. Written into the `source` column of every frame
     #: this adapter produces, so changing it changes published provenance.
-    name: str
+    #: Declared as a ClassVar so callers can read it off the class -- the CLI
+    #: lists capabilities without constructing adapters, which would need keys.
+    name: ClassVar[str]
 
     #: What this adapter can answer.
-    capabilities: frozenset[Capability]
+    capabilities: ClassVar[frozenset[Capability]]
 
     def supports(self, capability: Capability) -> bool:
         """Return whether this source can answer for `capability`."""
