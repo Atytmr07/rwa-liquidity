@@ -19,8 +19,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Final
 
+import polars as pl
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -35,9 +36,8 @@ from rwa_liquidity.schema.types import Denomination, VolumeMode
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import polars as pl
-
     from rwa_liquidity.metrics.report import AssetReport
+    from rwa_liquidity.sources.base import Source
 
 console = Console()
 
@@ -46,6 +46,9 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+#: Cap on how many per-source failures to list before summarising the rest.
+_MAX_FAILURES_SHOWN: Final = 5
 
 #: How each metric is rendered. Ratios that are conceptually shares are shown as
 #: percentages; turnover is left as a ratio because that is how it is quoted.
@@ -151,6 +154,50 @@ def _render_reconciliation(snapshots: pl.DataFrame) -> None:
     )
 
 
+def _collect_live(
+    period: Window, *, refresh: bool
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Measure the registry's assets against live, keyless sources.
+
+    The on-chain adapter comes first because its figures are derived from chain
+    state and checked against the contract's own `totalSupply()`, so they are the
+    ones to trust when a provider disagrees.
+    """
+    from rwa_liquidity.pipeline import collect  # noqa: PLC0415 -- keeps `--version` fast
+    from rwa_liquidity.sources import (  # noqa: PLC0415
+        DeFiLlamaPricesSource,
+        EvmRpcSource,
+        load_defillama_registry,
+    )
+
+    assets = [entry.ref for entry in load_defillama_registry()]
+    console.print(
+        f"Measuring [bold]{len(assets)}[/bold] assets against a public Ethereum node. "
+        f"The first run replays each token's full transfer history; later runs are cached."
+    )
+
+    sources: list[Source] = [EvmRpcSource(), DeFiLlamaPricesSource()]
+    try:
+        result = collect(sources, assets, window=period, refresh=refresh)
+    finally:
+        for source in sources:
+            source.close()
+
+    if result.failures:
+        console.print(f"\n[yellow]{len(result.failures)} fetch(es) failed:[/yellow]")
+        for name, message in result.failures[:_MAX_FAILURES_SHOWN]:
+            console.print(f"  [yellow]-[/yellow] {name}: {message}")
+        remaining = len(result.failures) - _MAX_FAILURES_SHOWN
+        if remaining > 0:
+            console.print(f"  [dim]... and {remaining} more[/dim]")
+
+    console.print(
+        f"\nsources: [bold]{', '.join(result.sources_used) or 'none'}[/bold]    "
+        f"transfers: {result.transfers.height:,}    holders: {result.holders.height:,}\n"
+    )
+    return result.snapshots, result.transfers, result.holders
+
+
 @app.command()
 def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
     # belongs on the command line rather than hidden in a config file.
@@ -175,6 +222,10 @@ def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
         int,
         typer.Option("--top-n", min=1, help="How many holders the concentration share covers."),
     ] = 10,
+    refresh: Annotated[
+        bool,
+        typer.Option("--refresh", help="Bypass the response cache and refetch."),
+    ] = False,
     out: Annotated[
         Path | None,
         typer.Option("--out", "-o", help="Write the table to a file (.csv, .parquet, .tex)."),
@@ -182,33 +233,27 @@ def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
 ) -> None:
     """Compute liquidity metrics and print them as a table.
 
-    With `--demo` this reads the committed sample dataset and needs no API keys,
-    which is the fastest way to see what the package produces.
+    Without `--demo` this measures real assets against a public Ethereum node,
+    which also needs no API keys but takes a minute on a cold cache. `--demo`
+    reads the committed sample dataset instead and is instant.
     """
-    if not demo:
-        # Live ingestion needs at least a Dune key for transfer data, and there
-        # is no honest way to fake it. Saying so beats printing a table of n/a.
-        console.print(
-            "[yellow]Live mode is not wired up yet.[/yellow] The metrics need "
-            "transfer-level data, which only the keyed Dune adapter supplies, and "
-            "those adapters have not been verified against their live APIs.\n\n"
-            "Run [bold]rwa-liquidity report --demo[/bold] to see the package work "
-            "against the committed sample dataset."
+    if demo:
+        dataset = load_demo_dataset()
+        console.print(f"[bold yellow]{DEMO_LABEL}[/bold yellow]\n")
+        window = (
+            dataset.window
+            if days == DEFAULT_WINDOW_DAYS
+            else Window.ending(dataset.window.end, days=days)
         )
-        raise typer.Exit(code=1)
+        snapshots, transfers, holders = dataset.snapshots, dataset.transfers, dataset.holders
+    else:
+        window = Window.ending(datetime.now(UTC), days=days)
+        snapshots, transfers, holders = _collect_live(window, refresh=refresh)
 
-    dataset = load_demo_dataset()
-    console.print(f"[bold yellow]{DEMO_LABEL}[/bold yellow]\n")
-
-    window = (
-        dataset.window
-        if days == DEFAULT_WINDOW_DAYS
-        else Window.ending(dataset.window.end, days=days)
-    )
     reports = build_report(
-        dataset.snapshots,
-        dataset.transfers,
-        dataset.holders,
+        snapshots,
+        transfers,
+        holders,
         window=window,
         mode=mode,
         denomination=denomination,
@@ -217,7 +262,7 @@ def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
 
     _render_table(reports, mode=mode)
     _render_caveats(reports)
-    _render_reconciliation(dataset.snapshots)
+    _render_reconciliation(snapshots)
 
     if out is not None:
         from rwa_liquidity.export import write_frame  # noqa: PLC0415 -- optional path
@@ -239,7 +284,6 @@ def sources() -> None:
         DeFiLlamaProtocolTvlSource,
         DuneSource,
         RwaXyzSource,
-        Source,
     )
 
     table = Table(title="Ingestion adapters", header_style="bold")
