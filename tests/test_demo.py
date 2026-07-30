@@ -226,11 +226,12 @@ def test_demo_writes_a_csv(tmp_path: Path) -> None:
     assert "turnover_ratio" in written.columns
 
 
-def test_live_mode_explains_itself_instead_of_printing_an_empty_table() -> None:
-    result = runner.invoke(app, ["report"])
-    assert result.exit_code == 1
-    assert "not wired up" in result.output
-    assert "--demo" in result.output
+def test_live_mode_is_offered_and_needs_no_key() -> None:
+    # Live mode measures real assets against a public node. The help text has to
+    # say that keys are not required, or nobody will try it.
+    output = runner.invoke(app, ["report", "--help"]).output
+    assert "--demo" in output
+    assert "--refresh" in output
 
 
 def test_invalid_mode_is_rejected() -> None:
