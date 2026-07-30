@@ -1,26 +1,45 @@
 # Mapping from canonical asset keys to DeFiLlama protocol slugs.
 #
-# This file is maintained by hand, which is a deliberate choice rather than a
-# gap. DeFiLlama's own `address` field cannot be used to derive it:
+# ## Why this file is maintained by hand
+#
+# DeFiLlama's own `address` field cannot be used to derive it:
 #
 #   * 90 of the 153 protocols in the RWA category have no address at all.
-#   * Where an address is present it is sometimes bare (`0x4580...`) and
-#     sometimes chain-prefixed with a DeFiLlama-specific alias
+#   * Where an address is present the format is inconsistent: sometimes bare
+#     (`0x4580...`), sometimes chain-prefixed with a DeFiLlama-specific alias
 #     (`era:0x57fD...`), with no field saying which.
-#   * The address often points at the wrong token entirely. `ondo-yield-assets`
-#     reports `0xfaba6f8e...`, which resolves to ONDO, Ondo's governance token,
-#     not to any tokenized treasury product the protocol issues. The same
-#     address is reported for `ondo-global-markets`.
+#   * **The address usually identifies a governance token rather than a tokenized
+#     asset.** Of the 40 distinct Ethereum addresses filed under the RWA category,
+#     roughly three quarters resolve on-chain to a protocol's own governance or
+#     utility token: ONDO, CFG, ENA, FXS, USUAL, SKY, CPOOL, SYRUP, NAOS, LNDX,
+#     STBU, SOLV and others. Those are equity in an issuer, not the instrument the
+#     issuer tokenized, and measuring their liquidity answers a different question.
 #
-# Guessing from that field would produce metrics for the wrong asset while
-# looking entirely successful, so the mapping is stated explicitly instead.
+# ## How the entries below were selected
 #
-# Every entry below was verified against the live API on 2026-07-29: the `uid`
-# resolves on coins.llama.fi to the stated `symbol`, and `defillama_slug`
-# resolves on api.llama.fi to a protocol whose chainTvls contains
-# `defillama_chain`.
+# A reproducible procedure, not a hand-picked list:
+#
+#   1. Take every protocol DeFiLlama files under category `RWA`.
+#   2. Extract the Ethereum addresses, handling both formats.
+#   3. Resolve each on-chain with `eth_call`. The contract's own `symbol()`,
+#      `name()` and `decimals()` decide what it is; DeFiLlama's label does not.
+#   4. Count the full `Transfer` history to check that exhaustive holder
+#      reconstruction is affordable.
+#   5. Keep the entries whose on-chain `name()` identifies a **tokenized asset**
+#      -- a fund, note, bond, or commodity claim -- and discard governance tokens.
+#
+# Step 5 is a judgement, and it is the only one. It is made from the contract's
+# own name, which is recorded in each entry's `notes` so the call can be checked.
+#
+# Verified on-chain 2026-07-30. `supply` and `logs` in the notes are as of that
+# date and will drift; they are there to show the order of magnitude, not as
+# assertions about the present.
 
 schema_version = 1
+
+# ---------------------------------------------------------------------------
+# Tokenized treasury and money-market funds
+# ---------------------------------------------------------------------------
 
 [[asset]]
 uid = "ethereum:0x7712c34205737192402172409a8f7ccef8aa2aec"
@@ -29,31 +48,10 @@ name = "BlackRock USD Institutional Digital Liquidity Fund"
 defillama_slug = "blackrock-buidl"
 defillama_chain = "Ethereum"
 notes = """
-The protocol is multi-chain; only the Ethereum share is taken. The protocol also \
-covers a second share class, BUIDL-I, so the protocol TVL exceeds the value of \
-this contract alone."""
-
-[[asset]]
-uid = "ethereum:0x45804880de22913dafe09f4980848ece6ecbaf78"
-symbol = "PAXG"
-name = "Paxos Gold"
-defillama_slug = "paxos-gold"
-defillama_chain = "Ethereum"
-notes = """
-Single-chain and single-token, so the protocol TVL and the contract's value \
-should agree closely. This makes it the most useful entry for validating the \
-reconciliation logic itself."""
-
-[[asset]]
-uid = "ethereum:0x68749665ff8d2d112fa859aa293f07a622782f38"
-symbol = "XAUT"
-name = "Tether Gold"
-defillama_slug = "tether-gold"
-defillama_chain = "Ethereum"
-notes = """
-DeFiLlama reports this symbol lowercase as `xaut` while reporting others \
-uppercase. Symbols are passed through as the source reports them rather than \
-being normalized, so this inconsistency is visible in the output."""
+On-chain name() confirms the fund. Supply 224,830,404 across 59 holders; ~15,000 \
+transfer logs since deployment. The protocol is multi-chain and also covers a \
+second share class, BUIDL-I, so its DeFiLlama TVL exceeds the value of this \
+contract alone."""
 
 [[asset]]
 uid = "ethereum:0x1b19c19393e2d034d8ff31ff34c81252fcbbee92"
@@ -65,4 +63,124 @@ notes = """
 Known imprecision: OUSG has no protocol slug of its own. `ondo-yield-assets` is \
 an umbrella covering USDY and other products, so its TVL is an upper bound on \
 OUSG rather than a measurement of it. Reconciliation against this entry should \
-be expected to disagree, and the disagreement is informative rather than a bug."""
+be expected to disagree, and the disagreement is informative rather than a bug. \
+Supply 1,445,114 across 53 holders; ~2,200 logs."""
+
+[[asset]]
+uid = "ethereum:0x48ab4e39ac59f4e88974804b04a991b3a402717f"
+symbol = "FDIT"
+name = "Fidelity Digital Interest Token"
+defillama_slug = "fidelity-digital-interest-token"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "Fidelity Digital Interest Token", a tokenized \
+money-market fund. Supply 63,287,229 against only 244 transfer logs since \
+deployment -- among the least active large funds in this registry."""
+
+[[asset]]
+uid = "ethereum:0x252739487c1fa66eaeae7ced41d6358ab2a6bca9"
+symbol = "RCOIN"
+name = "Arca US Treasury Fund (ArCoin)"
+defillama_slug = "arca-labs-arcoin"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "ArCoin". A registered closed-end fund holding short-term \
+Treasuries, and one of the earliest SEC-registered tokenized funds. Supply \
+452,082; ~400 logs."""
+
+[[asset]]
+uid = "ethereum:0x59d9356e565ab3a36dd77763fc0d87feaf85508c"
+symbol = "USDM"
+name = "Mountain Protocol USD"
+defillama_slug = "mountain-protocol"
+defillama_chain = "Ethereum"
+notes = """
+A yield-bearing stablecoin backed by short-term Treasuries, so economically a \
+tokenized treasury claim rather than a payment stablecoin. **Rebasing**: balances \
+grow without a Transfer event, so holder reconstruction is expected to disagree \
+with totalSupply() and the adapter will say so. That makes this entry the useful \
+test of whether the verification check actually fires. Supply 1,276,201; \
+~17,000 logs."""
+
+[[asset]]
+uid = "ethereum:0x917991d52aa2fc1b5612a6aa5e4e81d580f97532"
+symbol = "ZTLN"
+name = "Zoth Tokenized Liquid Note"
+defillama_slug = "zoth-ztln"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "Zoth Tokenized Liquid Note". Supply 150,000,000 against \
+**12 transfer logs in its entire history**. If any asset in this registry has no \
+secondary market, it is this one."""
+
+# ---------------------------------------------------------------------------
+# Tokenized private credit
+# ---------------------------------------------------------------------------
+
+[[asset]]
+uid = "ethereum:0xda2ffa104356688e74d9340519b8c17f00d7752e"
+symbol = "HLSCOPE"
+name = "Hamilton Lane SCOPE Securitize Tokenized Feeder Fund"
+defillama_slug = "hamilton-lane-senior-credit-opportunities-securitize-fund"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "Hamilton Lane SCOPE Securitize Tokenized Feeder Fund". A \
+feeder into an institutional private-credit fund. Supply is 159.94 tokens -- the \
+NAV per token is large -- across **50 transfer logs since deployment**. Private \
+credit is illiquid by design, so a near-zero secondary market here is the \
+expected result rather than a surprise, which makes it a useful control."""
+
+# ---------------------------------------------------------------------------
+# Tokenized commodities and environmental assets
+# ---------------------------------------------------------------------------
+
+[[asset]]
+uid = "ethereum:0xf5238462e7235c7b62811567e63dd17d12c2eaa0"
+symbol = "CGT"
+name = "CACHE Gold"
+defillama_slug = "cache.gold"
+defillama_chain = "Ethereum"
+notes = """
+Each token is a claim on one gram of vaulted gold. Supply 100,771 grams; \
+~10,200 logs, so still scannable, unlike the larger gold tokens below."""
+
+[[asset]]
+uid = "ethereum:0x01995a697752266d8e748738aaa3f06464b8350b"
+symbol = "CANA"
+name = "CANA Holdings California Carbon Credits"
+defillama_slug = "cana-holdings-california-carbon-credits"
+defillama_chain = "Ethereum"
+notes = """
+Tokenized California compliance carbon allowances. Supply 30,837; ~6,100 logs. \
+Included because an environmental-commodity claim is a different instrument class \
+from a fund share and should not be assumed to behave like one."""
+
+[[asset]]
+uid = "ethereum:0x90d53b872ce6421122b41a290acdd22a5ed931bd"
+symbol = "ATT"
+name = "Agatobwe (Frigg green bond)"
+defillama_slug = "frigg.eco"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "Agatobwe". A tokenized green bond financing clean-energy \
+infrastructure. Supply 1,825 across 59 logs -- small enough that every transfer \
+can be inspected individually."""
+
+# ---------------------------------------------------------------------------
+# Deliberately included and expected to fail
+# ---------------------------------------------------------------------------
+
+[[asset]]
+uid = "ethereum:0x45804880de22913dafe09f4980848ece6ecbaf78"
+symbol = "PAXG"
+name = "Paxos Gold"
+defillama_slug = "paxos-gold"
+defillama_chain = "Ethereum"
+notes = """
+Kept in the registry although it **cannot** be measured by full-history \
+reconstruction: over 250,000 transfer logs, past the scan budget. Tokenized gold \
+trades like an ordinary crypto asset rather than like a fund share, and that is \
+the boundary of the method. Its presence keeps the boundary visible in every run \
+instead of leaving it as a claim in the documentation. Single-chain and \
+single-token, so its protocol TVL and contract value should agree closely, which \
+also makes it the best entry for exercising the reconciliation logic."""

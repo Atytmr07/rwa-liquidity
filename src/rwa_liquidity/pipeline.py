@@ -47,12 +47,18 @@ class IngestionResult:
             failure is recorded rather than propagated: one provider being down
             should not discard the data the others returned, but it must not be
             invisible either.
+        unmeasured: Assets whose transfer or holder data could not be fetched at
+            all. These must be kept apart from assets that were measured and
+            found inactive: an empty transfer frame means "did not trade", which
+            is a finding, and a failed scan means nothing is known. Reporting the
+            second as the first is the conflation this package exists to avoid.
     """
 
     snapshots: pl.DataFrame
     transfers: pl.DataFrame
     holders: pl.DataFrame
     failures: tuple[tuple[str, str], ...] = field(default=())
+    unmeasured: frozenset[str] = field(default=frozenset())
 
     @property
     def sources_used(self) -> tuple[str, ...]:
@@ -97,6 +103,7 @@ def collect(
     transfers: list[pl.DataFrame] = []
     holders: list[pl.DataFrame] = []
     failures: list[tuple[str, str]] = []
+    unmeasured: set[str] = set()
 
     for source in sources:
         if source.supports(Capability.ASSET_SNAPSHOT):
@@ -119,6 +126,7 @@ def collect(
                     )
                 except SourceError as error:
                     failures.append((source.name, f"transfers for {asset.uid}: {error}"))
+                    unmeasured.add(asset.uid)
                     logger.warning(
                         "%s could not supply transfers for %s: %s", source.name, asset.uid, error
                     )
@@ -127,6 +135,7 @@ def collect(
                     holders.append(source.fetch_holders(asset, as_of=window.end, refresh=refresh))
                 except SourceError as error:
                     failures.append((source.name, f"holders for {asset.uid}: {error}"))
+                    unmeasured.add(asset.uid)
                     logger.warning(
                         "%s could not supply holders for %s: %s", source.name, asset.uid, error
                     )
@@ -136,4 +145,20 @@ def collect(
         transfers=_concat(transfers, TransferEvent),
         holders=_concat(holders, HolderBalance),
         failures=tuple(failures),
+        # An asset counts as measured if some source answered for it, even if
+        # another failed, so the set is narrowed to those left with nothing.
+        unmeasured=frozenset(
+            uid
+            for uid in unmeasured
+            if uid not in set(transfers_uids(transfers)) | set(transfers_uids(holders))
+        ),
     )
+
+
+def transfers_uids(frames: Sequence[pl.DataFrame]) -> list[str]:
+    """Return every asset uid present across `frames`."""
+    seen: list[str] = []
+    for frame in frames:
+        if not frame.is_empty():
+            seen.extend(str(value) for value in frame["asset_uid"].unique().to_list())
+    return seen

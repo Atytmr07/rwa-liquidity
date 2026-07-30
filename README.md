@@ -13,17 +13,26 @@ back to the raw records they came from.
 
 Measured against Ethereum mainnet with no API key, 30 days to 2026-07-30:
 
+Eleven tokenized real-world assets, selected by a reproducible on-chain procedure
+rather than by hand. **Four of the ten measurable ones recorded zero
+holder-to-holder transfers in 30 days.** One of those, ZTLN, has $150m
+outstanding, two holders, and no trading in its entire history.
+
 | BlackRock BUIDL — $224.8M, **59 holders** | Counting all transfers | Counting only secondary trades |
 |---|---|---|
 | Turnover | 0.2015 | **0.0187** |
 | Dormancy | 3.0% | **96.2%** |
 
 731 transfers, of which **696 were issuance and 32 were actual trading**. Raw
-transfer volume overstates this fund's secondary liquidity by **10.8x**, and the
-factor is asset-specific: for Ondo's OUSG it is 2.1x.
+transfer volume overstates this fund's secondary liquidity by **10.8x** — and the
+factor is asset-specific, between 1x and 11x across the set, so it cannot be
+corrected with a scalar.
 
-Full write-up, including where the method stops working, in
-[`docs/findings.md`](docs/findings.md).
+Eight of the ten exceed an HHI of 2,500, the threshold US antitrust guidelines
+call highly concentrated. Six exceed 5,000.
+
+Full write-up, including the assets the method cannot measure and why, in
+**[`docs/findings.md`](docs/findings.md)**.
 
 ## Try it in two commands
 

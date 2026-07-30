@@ -62,6 +62,7 @@ def total_volume(
     window: Window,
     mode: VolumeMode = VolumeMode.SECONDARY_ONLY,
     denomination: Denomination = Denomination.NATIVE,
+    asset_uid: str | None = None,
 ) -> MetricResult:
     """Return the summed transfer amount over the window.
 
@@ -74,6 +75,9 @@ def total_volume(
         mode: Which transfer kinds to count.
         denomination: `native` for token units, `usd` for the source's own
             dollar figures.
+        asset_uid: The asset being measured. Supply it where the transfer frame
+            may legitimately be empty, so an asset that did not move reports a
+            volume of zero rather than refusing to identify itself.
 
     Returns:
         The volume, or `None` if the chosen denomination is not populated.
@@ -83,7 +87,7 @@ def total_volume(
     # and then fail somewhere less obvious.
     mode = VolumeMode(mode)
     denomination = Denomination(denomination)
-    asset_uid = single_asset(transfers, what="transfers")
+    asset_uid = single_asset(transfers, what="transfers", expected=asset_uid)
     in_window = window.clip(transfers, column="block_time")
     counted = filter_by_mode(in_window, mode)
     column = _AMOUNT_COLUMN[denomination]
@@ -124,13 +128,16 @@ def total_volume(
     return MetricResult(value=float(counted[column].sum()), provenance=provenance)
 
 
-def turnover_ratio(
+def turnover_ratio(  # noqa: PLR0913 -- the two frames it divides, the window,
+    # and the three conventions that change what the ratio means. None has a
+    # sensible default hiding place.
     transfers: pl.DataFrame,
     snapshots: pl.DataFrame,
     *,
     window: Window,
     mode: VolumeMode = VolumeMode.SECONDARY_ONLY,
     denomination: Denomination = Denomination.NATIVE,
+    asset_uid: str | None = None,
 ) -> MetricResult:
     """Return transfer volume over the window divided by asset size at its end.
 
@@ -152,6 +159,7 @@ def turnover_ratio(
         window: The observation period.
         mode: Which transfer kinds to count.
         denomination: Which of the two readings to compute.
+        asset_uid: The asset being measured; see `total_volume`.
 
     Returns:
         The ratio, or `None` if the denominator is absent or zero.
@@ -161,7 +169,9 @@ def turnover_ratio(
     # and then fail somewhere less obvious.
     mode = VolumeMode(mode)
     denomination = Denomination(denomination)
-    volume = total_volume(transfers, window=window, mode=mode, denomination=denomination)
+    volume = total_volume(
+        transfers, window=window, mode=mode, denomination=denomination, asset_uid=asset_uid
+    )
     snapshot = latest_snapshot(snapshots, window)
     column = _DENOMINATOR_COLUMN[denomination]
     size = snapshot.get(column)
@@ -208,6 +218,7 @@ def volume_per_active_address(
     window: Window,
     mode: VolumeMode = VolumeMode.SECONDARY_ONLY,
     denomination: Denomination = Denomination.NATIVE,
+    asset_uid: str | None = None,
 ) -> MetricResult:
     """Return transfer volume over the window divided by active addresses.
 
@@ -219,6 +230,7 @@ def volume_per_active_address(
         window: The observation period.
         mode: Which transfer kinds to count.
         denomination: Which unit to express volume in.
+        asset_uid: The asset being measured; see `total_volume`.
 
     Returns:
         The ratio, or `None` if no address was active.
@@ -228,7 +240,9 @@ def volume_per_active_address(
     # and then fail somewhere less obvious.
     mode = VolumeMode(mode)
     denomination = Denomination(denomination)
-    volume = total_volume(transfers, window=window, mode=mode, denomination=denomination)
+    volume = total_volume(
+        transfers, window=window, mode=mode, denomination=denomination, asset_uid=asset_uid
+    )
     counted = filter_by_mode(window.clip(transfers, column="block_time"), mode)
     active = active_addresses(counted)
 

@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any, Final
 import polars as pl
 
 from rwa_liquidity.schema.frames import AssetSnapshot, HolderBalance, TransferEvent
-from rwa_liquidity.schema.types import ZERO_ADDRESS
+from rwa_liquidity.schema.types import BURN_ADDRESSES
 from rwa_liquidity.schema.validation import polars_schema, validate
 from rwa_liquidity.sources.base import Capability, Source, SourceFetchError
 from rwa_liquidity.sources.classify import classify_transfers
@@ -84,6 +84,12 @@ _ERC20_TOPIC_COUNT: Final = 3
 #: A 256-bit word is 32 bytes, i.e. 64 hex characters.
 _WORD_HEX: Final = 64
 
+#: Longest contract-supplied label kept; see `_sanitize`.
+_MAX_LABEL_LENGTH: Final = 80
+
+#: Padding byte on the older bytes32 string encoding.
+NUL_BYTE: Final = b"\x00"
+
 #: Default ceiling on how many logs a single scan will accept. A tokenized fund
 #: is well inside this; a widely traded token is not, and stopping with a clear
 #: message beats issuing thousands of requests against a free endpoint.
@@ -122,25 +128,50 @@ def _decode_uint(raw: str | None) -> int | None:
         return None
 
 
+def _sanitize(text: str) -> str | None:
+    """Make a contract-supplied string safe to print and to put in a table.
+
+    A token's `symbol()` and `name()` are whatever its deployer chose to write.
+    They travel unaltered into a terminal, a CSV and a LaTeX table, so they are
+    treated as untrusted input rather than as labels:
+
+    * Control characters are dropped. A newline breaks table alignment -- one
+      registry asset really does return a symbol containing whitespace that
+      wrecked the rendered output -- and an ANSI escape sequence inside a
+      `name()` would be acted on by the terminal it is printed to.
+    * Runs of whitespace collapse to one space, and the result is trimmed.
+    * An over-long value is truncated. A symbol is a ticker; a contract
+      returning a paragraph is not describing one, and a very long string is a
+      cheap way to disrupt any table it lands in.
+    """
+    kept = "".join(character for character in text if character.isprintable())
+    collapsed = " ".join(kept.split())
+    if not collapsed:
+        return None
+    if len(collapsed) > _MAX_LABEL_LENGTH:
+        return collapsed[:_MAX_LABEL_LENGTH].rstrip() + "..."
+    return collapsed
+
+
 def _decode_string(raw: str | None) -> str | None:
     """Decode a returned string, handling both ABI encodings in the wild.
 
     A conformant token returns a dynamic `string`: an offset word, a length word,
     then the bytes. Several older tokens return a fixed `bytes32` instead, with
     the text left-aligned and null-padded. Both appear among real RWA tokens, so
-    both are handled.
+    both are handled. The result is sanitized before it is returned; see
+    `_sanitize` for why that is not paranoia.
     """
     if not raw or raw == "0x":
         return None
     body = bytes.fromhex(raw[2:])
     if len(body) < 2 * _WORD_HEX // 2:
         # Too short to carry offset and length words: treat as bytes32.
-        return body.rstrip(b"\x00").decode("utf-8", "replace").strip() or None
+        return _sanitize(body.rstrip(NUL_BYTE).decode("utf-8", "replace"))
     length = int.from_bytes(body[32:64], "big")
     if 0 < length <= len(body) - 64:
-        text = body[64 : 64 + length].decode("utf-8", "replace").strip()
-        return text or None
-    return body[:32].rstrip(b"\x00").decode("utf-8", "replace").strip() or None
+        return _sanitize(body[64 : 64 + length].decode("utf-8", "replace"))
+    return _sanitize(body[:32].rstrip(NUL_BYTE).decode("utf-8", "replace"))
 
 
 class EvmRpcSource(Source):
@@ -233,14 +264,37 @@ class EvmRpcSource(Source):
             raise SourceFetchError(f"{self.name}: {method} failed: {payload['error']}")
         return payload.get("result")
 
-    def _call(self, address: str, selector: str, *, refresh: bool = False) -> str | None:
-        result = self._rpc(
-            "eth_call",
-            [{"to": address, "data": selector}, "latest"],
-            dataset="eth_call",
-            cache_key=f"{address}:{selector}",
-            refresh=refresh,
-        )
+    def _call(
+        self, address: str, selector: str, *, block: int | None = None, refresh: bool = False
+    ) -> str | None:
+        """Read contract state, optionally at a specific block.
+
+        Pinning matters for `totalSupply()`: the reconstruction check compares a
+        ledger replayed up to some block against the supply, and reading the
+        supply at "latest" instead would let activity between the two show up as
+        a reconstruction failure. Not every public endpoint serves historical
+        calls, so a rejection falls back to "latest" and the check becomes
+        approximate rather than unavailable.
+        """
+        target = "latest" if block is None else hex(block)
+        try:
+            result = self._rpc(
+                "eth_call",
+                [{"to": address, "data": selector}, target],
+                dataset="eth_call",
+                cache_key=f"{address}:{selector}:{target}",
+                refresh=refresh,
+            )
+        except SourceFetchError:
+            if block is None:
+                raise
+            logger.info(
+                "%s: %s does not serve historical eth_call; reading %s at latest instead",
+                self.name,
+                self._rpc_url,
+                selector,
+            )
+            return self._call(address, selector, refresh=refresh)
         return result if isinstance(result, str) else None
 
     def head_block(self, *, refresh: bool = True) -> int:
@@ -337,9 +391,19 @@ class EvmRpcSource(Source):
 
     # -- decoding -----------------------------------------------------------
 
-    def _decode_logs(self, logs: Sequence[Mapping[str, Any]], *, refresh: bool) -> pl.DataFrame:
-        """Turn raw logs into rows, resolving each one's block time."""
-        rows: list[dict[str, Any]] = []
+    def _decode_logs(
+        self, logs: Sequence[Mapping[str, Any]], *, refresh: bool
+    ) -> list[dict[str, Any]]:
+        """Decode raw logs into records, resolving each one's block time.
+
+        Amounts stay Python integers here rather than going straight into a
+        frame. A real token emits values that do not fit any fixed-width integer
+        type -- CACHE Gold has a `Transfer` of 1.1e40 raw units against a supply
+        of 100,771 -- and building a frame from those raises rather than
+        producing a wrong number. Python's unbounded integers carry them through
+        to the plausibility check below, which is where such a value belongs.
+        """
+        records: list[dict[str, Any]] = []
         missing_times: list[int] = []
         skipped_non_erc20 = 0
 
@@ -359,7 +423,7 @@ class EvmRpcSource(Source):
             stamp = _decode_uint(log.get("blockTimestamp"))
             if stamp is None:
                 missing_times.append(block)
-            rows.append(
+            records.append(
                 {
                     "block": block,
                     "log_index": index,
@@ -381,24 +445,86 @@ class EvmRpcSource(Source):
 
         if missing_times:
             resolved = self._block_times(missing_times, refresh=refresh)
-            for row in rows:
-                if row["block_time"] is None:
-                    row["block_time"] = resolved[row["block"]]
+            for record in records:
+                if record["block_time"] is None:
+                    record["block_time"] = resolved[record["block"]]
 
+        records.sort(key=lambda record: (record["block"], record["log_index"]))
+        return records
+
+    def _drop_implausible(
+        self, records: list[dict[str, Any]], asset: AssetRef
+    ) -> list[dict[str, Any]]:
+        """Remove transfers that move more than the supply in existence.
+
+        This is an invariant of ERC-20 rather than a threshold: outside of a
+        mint, a transfer cannot move more tokens than exist at that moment. The
+        running supply is tracked chronologically through the same log stream, so
+        the bound is exact at every point rather than compared against today's
+        figure -- a fund that has since shrunk legitimately has historical
+        transfers larger than its current supply, and those must not be touched.
+
+        Contracts do emit logs that violate this. CACHE Gold has three, the
+        largest 1.1e40 raw units against a supply of about 1e13. Left in, a
+        single such value would dominate every volume metric and make the output
+        meaningless; the sum is not robust to one absurd term.
+        """
+        kept: list[dict[str, Any]] = []
+        supply = 0
+        dropped: list[int] = []
+        for record in records:
+            amount = int(record["raw_amount"])
+            minting = record["from_address"] in BURN_ADDRESSES
+            if minting:
+                supply += amount
+            elif amount > supply:
+                dropped.append(amount)
+                continue
+            elif record["to_address"] in BURN_ADDRESSES:
+                supply -= amount
+            kept.append(record)
+
+        if dropped:
+            logger.warning(
+                "%s dropped %d transfer(s) for %s that move more than the supply in "
+                "existence, the largest %.3g raw units. A transfer cannot move tokens "
+                "that do not exist, so these are contract artifacts rather than "
+                "activity; one such value left in the sum would dominate every volume "
+                "metric.",
+                self.name,
+                len(dropped),
+                asset.uid,
+                max(dropped),
+            )
+        return kept
+
+    @staticmethod
+    def _to_frame(records: Sequence[Mapping[str, Any]], *, scale: int) -> pl.DataFrame:
+        """Build a frame of human-scaled amounts from decoded records."""
         return pl.DataFrame(
-            rows,
+            {
+                "block_time": [record["block_time"] for record in records],
+                "tx_hash": [record["tx_hash"] for record in records],
+                "log_index": [record["log_index"] for record in records],
+                "from_address": [record["from_address"] for record in records],
+                "to_address": [record["to_address"] for record in records],
+                # Scaled to a float here, after the plausibility check has run on
+                # the exact integers.
+                "amount": [int(record["raw_amount"]) / scale for record in records],
+            },
             schema={
-                "block": pl.Int64(),
-                "log_index": pl.Int64(),
+                "block_time": pl.Datetime("us", "UTC"),
                 "tx_hash": pl.String(),
+                "log_index": pl.Int64(),
                 "from_address": pl.String(),
                 "to_address": pl.String(),
-                "raw_amount": pl.Int128(),
-                "block_time": pl.Datetime("us", "UTC"),
+                "amount": pl.Float64(),
             },
         )
 
-    def _token_facts(self, asset: AssetRef, *, refresh: bool) -> dict[str, Any]:
+    def _token_facts(
+        self, asset: AssetRef, *, refresh: bool, block: int | None = None
+    ) -> dict[str, Any]:
         """Read decimals, supply, symbol and name straight off the contract."""
         decimals = _decode_uint(self._call(asset.address, _SELECTOR_DECIMALS, refresh=refresh))
         if decimals is None:
@@ -409,7 +535,7 @@ class EvmRpcSource(Source):
         return {
             "decimals": decimals,
             "raw_total_supply": _decode_uint(
-                self._call(asset.address, _SELECTOR_TOTAL_SUPPLY, refresh=refresh)
+                self._call(asset.address, _SELECTOR_TOTAL_SUPPLY, block=block, refresh=refresh)
             ),
             "symbol": _decode_string(self._call(asset.address, _SELECTOR_SYMBOL, refresh=refresh)),
             "name": _decode_string(self._call(asset.address, _SELECTOR_NAME, refresh=refresh)),
@@ -431,8 +557,9 @@ class EvmRpcSource(Source):
         """
         schema = dict(polars_schema(AssetSnapshot))
         rows: list[dict[str, Any]] = []
+        head = self.head_block()
         for asset in dict.fromkeys(assets):
-            facts = self._token_facts(asset, refresh=refresh)
+            facts = self._token_facts(asset, refresh=refresh, block=head)
             scale = 10 ** facts["decimals"]
             raw_supply = facts["raw_total_supply"]
             rows.append(
@@ -469,18 +596,19 @@ class EvmRpcSource(Source):
         timestamps, because block numbers and wall-clock time are only loosely
         related and guessing a block from a date would silently clip the window.
         """
-        facts = self._token_facts(asset, refresh=refresh)
-        scale = 10 ** facts["decimals"]
         head = self.head_block()
+        facts = self._token_facts(asset, refresh=refresh, block=head)
+        scale = 10 ** facts["decimals"]
 
         collected: list[dict[str, Any]] = []
         self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
-        decoded = self._decode_logs(collected, refresh=refresh)
+        records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
 
         schema = dict(polars_schema(TransferEvent))
-        if decoded.is_empty():
+        if not records:
             return validate(TransferEvent, pl.DataFrame(schema=schema), origin=self.name)
 
+        decoded = self._to_frame(records, scale=scale)
         windowed = decoded.filter((pl.col("block_time") >= start) & (pl.col("block_time") < end))
         classified = classify_transfers(
             windowed,
@@ -491,7 +619,6 @@ class EvmRpcSource(Source):
             pl.lit(asset.uid).alias("asset_uid"),
             pl.lit(self.name).alias("source"),
             pl.lit(datetime.now(UTC)).alias("retrieved_at").cast(pl.Datetime("us", "UTC")),
-            (pl.col("raw_amount").cast(pl.Float64) / scale).alias("amount"),
             pl.lit(None, dtype=pl.Float64).alias("amount_usd"),
         ).select(list(schema))
         return validate(TransferEvent, frame, origin=self.name)
@@ -522,21 +649,21 @@ class EvmRpcSource(Source):
             A validated `HolderBalance` frame, one row per address with a
             positive balance.
         """
-        facts = self._token_facts(asset, refresh=refresh)
-        scale = 10 ** facts["decimals"]
         head = self.head_block()
+        facts = self._token_facts(asset, refresh=refresh, block=head)
+        scale = 10 ** facts["decimals"]
 
         collected: list[dict[str, Any]] = []
         self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
-        decoded = self._decode_logs(collected, refresh=refresh)
+        records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
 
         ledger: dict[str, int] = defaultdict(int)
-        for sender, recipient, amount in decoded.select(
-            "from_address", "to_address", "raw_amount"
-        ).iter_rows():
-            ledger[str(sender)] -= int(amount)
-            ledger[str(recipient)] += int(amount)
-        ledger.pop(ZERO_ADDRESS, None)
+        for record in records:
+            amount = int(record["raw_amount"])
+            ledger[str(record["from_address"])] -= amount
+            ledger[str(record["to_address"])] += amount
+        for burn_address in BURN_ADDRESSES:
+            ledger.pop(burn_address, None)
 
         holders = {address: value for address, value in ledger.items() if value > _DUST}
         self._verify_reconstruction(asset, holders, facts, negative=ledger)

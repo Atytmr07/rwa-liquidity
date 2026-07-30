@@ -23,6 +23,7 @@ from rwa_liquidity.metrics.base import (
     MetricInputError,
     MetricResult,
     Provenance,
+    impossible_share,
     prepare_holders,
     resolve_total_supply,
     single_asset,
@@ -98,7 +99,11 @@ def top_holder_share(
         )
 
     top = float(kept.sort("balance", descending=True).head(n)["balance"].sum())
-    return MetricResult(value=top / total, provenance=provenance)
+    share = top / total
+    problem = impossible_share(share, what=f"the top-{n} holder share")
+    if problem is not None:
+        return MetricResult(value=None, provenance=provenance.with_warning(problem))
+    return MetricResult(value=share, provenance=provenance)
 
 
 def holder_hhi(
@@ -149,4 +154,10 @@ def holder_hhi(
     # One address can appear once per snapshot by the schema's uniqueness rule,
     # so balances are squared directly without needing to be grouped first.
     squared_shares = (kept["balance"] / total) ** 2
-    return MetricResult(value=float(squared_shares.sum()) * HHI_SCALE, provenance=provenance)
+    index = float(squared_shares.sum())
+    # HHI is a sum of squared shares, so it is bounded by 1 for the same reason a
+    # share is; scaled, that is HHI_SCALE.
+    problem = impossible_share(index, what="the holder HHI")
+    if problem is not None:
+        return MetricResult(value=None, provenance=provenance.with_warning(problem))
+    return MetricResult(value=index * HHI_SCALE, provenance=provenance)

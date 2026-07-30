@@ -51,6 +51,11 @@ DEFAULT_WINDOW_DAYS: Final = 30
 #: too incomplete for a concentration figure to be quoted without a caveat.
 COVERAGE_FLOOR: Final = 0.99
 
+#: A share is a fraction of supply, so it cannot exceed 1, and floating-point
+#: summation cannot push a correct one past this. Anything above it means the
+#: holder distribution and the supply figure disagree.
+SHARE_CEILING: Final = 1.0 + 1e-9
+
 #: How far after a window's end a snapshot may still be used to describe the
 #: state at that end. A live source reads the chain as it is now, and a
 #: full-history scan takes minutes, so the reading always post-dates the window
@@ -164,23 +169,31 @@ class MetricResult:
         return self.value is not None
 
 
-def single_asset(frame: pl.DataFrame, *, what: str) -> str:
+def single_asset(frame: pl.DataFrame, *, what: str, expected: str | None = None) -> str:
     """Return the one asset uid in `frame`, or raise.
 
-    Metrics are defined for one asset. Silently aggregating across several
-    would produce a plausible-looking number that describes nothing.
+    Metrics are defined for one asset. Silently aggregating across several would
+    produce a plausible-looking number that describes nothing.
 
     Args:
         frame: A normalized frame.
         what: Name of the frame, for the error message.
+        expected: The asset the caller is measuring. Supply this where an empty
+            frame is a legitimate answer rather than missing input: an asset with
+            no transfers in the window has a turnover of zero, which is a
+            finding, and refusing to identify it would hide exactly the assets
+            this package is looking for.
 
     Returns:
-        The single asset uid present.
+        The single asset uid present, or `expected` when the frame is empty.
 
     Raises:
-        MetricInputError: If the frame is empty or covers more than one asset.
+        MetricInputError: If the frame is empty with no `expected` given, covers
+            more than one asset, or covers an asset other than `expected`.
     """
     if frame.is_empty():
+        if expected is not None:
+            return expected
         raise MetricInputError(f"{what} frame is empty, so there is no asset to measure")
     uids = frame["asset_uid"].unique().to_list()
     if len(uids) != 1:
@@ -188,7 +201,10 @@ def single_asset(frame: pl.DataFrame, *, what: str) -> str:
             f"{what} frame covers {len(uids)} assets ({', '.join(sorted(uids))}); "
             f"metrics are defined for one asset at a time"
         )
-    return str(uids[0])
+    found = str(uids[0])
+    if expected is not None and found != expected:
+        raise MetricInputError(f"{what} frame covers {found!r} but {expected!r} was being measured")
+    return found
 
 
 def filter_by_mode(transfers: pl.DataFrame, mode: VolumeMode) -> pl.DataFrame:
@@ -285,6 +301,25 @@ def sources_of(*frames: pl.DataFrame) -> tuple[str, ...]:
         if not frame.is_empty():
             labels.update(str(value) for value in frame["source"].unique().to_list())
     return tuple(sorted(labels))
+
+
+def impossible_share(value: float, *, what: str) -> str | None:
+    """Return a message if `value` is not a share of supply, else `None`.
+
+    A distribution that sums to more than the supply it is divided by yields a
+    share above 1. That is not a value with a caveat attached, it is not a share
+    at all, and publishing it invites the reader to treat 2.21 as a percentage.
+    The usual cause is a rebasing token, whose balances change without emitting
+    transfers, so a ledger replayed from transfers cannot describe them.
+    """
+    if value <= SHARE_CEILING:
+        return None
+    return (
+        f"{what} came out at {value:.4g}, which is not a possible share of supply. "
+        f"The holder distribution and the reported supply disagree -- most often "
+        f"because the token rebases, so balances change without a transfer -- and "
+        f"no meaningful share can be derived from them."
+    )
 
 
 def prepare_holders(

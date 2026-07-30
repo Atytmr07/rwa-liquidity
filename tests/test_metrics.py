@@ -544,3 +544,42 @@ def test_active_holder_ratio_prefers_an_observed_distribution() -> None:
 def test_active_holder_ratio_falls_back_to_the_reported_count() -> None:
     result = active_holder_ratio(transfers_frame(), snapshot_frame(), window=WINDOW)
     assert result.value == pytest.approx(0.6)  # 3 of 5 reported holders
+
+
+def test_an_asset_with_no_transfers_reports_zero_not_undefined() -> None:
+    # The asset identity comes from the caller, because there is no transfer row
+    # to read it from. Without that the quietest assets -- the ones this package
+    # is looking for -- would be reported as unmeasured.
+    empty = transfers_frame().clear()
+    result = turnover_ratio(empty, snapshot_frame(), window=WINDOW, asset_uid=ASSET)
+    assert result.value == 0.0
+    assert result.provenance.asset_uid == ASSET
+
+
+def test_a_mismatched_asset_uid_is_refused() -> None:
+    with pytest.raises(MetricInputError, match="was being measured"):
+        turnover_ratio(
+            transfers_frame(), snapshot_frame(), window=WINDOW, asset_uid="ethereum:0xdead"
+        )
+
+
+def test_a_share_above_one_is_refused_rather_than_published() -> None:
+    # A rebasing token's balances grow without transfers, so a ledger replayed
+    # from transfers disagrees with supply and yields shares above 1. USDM
+    # produced a top-10 share of 2.21 this way. A warning on an impossible
+    # number is not enough; it invites the reader to treat it as a percentage.
+    inflated = holders_frame([(A, 1500.0), (B, 900.0)])
+    top = top_holder_share(inflated, snapshot_frame(), window=WINDOW, n=2)
+    hhi = holder_hhi(inflated, snapshot_frame(), window=WINDOW)
+
+    assert top.value is None
+    assert hhi.value is None
+    assert any("not a possible share" in w for w in top.provenance.warnings)
+    assert any("rebases" in w for w in hhi.provenance.warnings)
+
+
+def test_dormancy_above_one_is_refused_too() -> None:
+    inflated = holders_frame([(B, 1500.0)])
+    result = dormancy(inflated, transfers_frame(), snapshot_frame(), window=WINDOW)
+    assert result.value is None
+    assert any("not a possible share" in w for w in result.provenance.warnings)

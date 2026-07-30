@@ -156,7 +156,7 @@ def _render_reconciliation(snapshots: pl.DataFrame) -> None:
 
 def _collect_live(
     period: Window, *, refresh: bool
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, frozenset[str]]:
     """Measure the registry's assets against live, keyless sources.
 
     The on-chain adapter comes first because its figures are derived from chain
@@ -195,7 +195,7 @@ def _collect_live(
         f"\nsources: [bold]{', '.join(result.sources_used) or 'none'}[/bold]    "
         f"transfers: {result.transfers.height:,}    holders: {result.holders.height:,}\n"
     )
-    return result.snapshots, result.transfers, result.holders
+    return result.snapshots, result.transfers, result.holders, result.unmeasured
 
 
 @app.command()
@@ -246,9 +246,10 @@ def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
             else Window.ending(dataset.window.end, days=days)
         )
         snapshots, transfers, holders = dataset.snapshots, dataset.transfers, dataset.holders
+        unmeasured: frozenset[str] = frozenset()
     else:
         window = Window.ending(datetime.now(UTC), days=days)
-        snapshots, transfers, holders = _collect_live(window, refresh=refresh)
+        snapshots, transfers, holders, unmeasured = _collect_live(window, refresh=refresh)
 
     reports = build_report(
         snapshots,
@@ -258,6 +259,7 @@ def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
         mode=mode,
         denomination=denomination,
         top_n=top_n,
+        unmeasured=unmeasured,
     )
 
     _render_table(reports, mode=mode)

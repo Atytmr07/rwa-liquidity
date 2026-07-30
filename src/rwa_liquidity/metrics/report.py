@@ -54,6 +54,8 @@ class AssetReport:
         metrics: Metric name to result, in `METRIC_COLUMNS` order.
         window: The observation period.
         mode: The volume mode applied.
+        notes: Report-level caveats that belong to no single metric, such as the
+            asset's data having failed to load at all.
     """
 
     asset_uid: str
@@ -61,6 +63,7 @@ class AssetReport:
     metrics: dict[str, MetricResult]
     window: Window
     mode: VolumeMode
+    notes: tuple[str, ...] = ()
 
     def value(self, name: str) -> float | None:
         """Return one metric's value, or `None` if it is undefined."""
@@ -69,8 +72,8 @@ class AssetReport:
 
     @property
     def warnings(self) -> tuple[str, ...]:
-        """Return every distinct warning across the metrics, in a stable order."""
-        seen: dict[str, None] = {}
+        """Return every distinct caveat on this row, in a stable order."""
+        seen: dict[str, None] = dict.fromkeys(self.notes)
         for result in self.metrics.values():
             for warning in result.provenance.warnings:
                 seen[warning] = None
@@ -100,6 +103,7 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
     denomination: Denomination = Denomination.NATIVE,
     top_n: int = DEFAULT_TOP_N,
     exclude: Collection[str] = (),
+    unmeasured: Collection[str] = (),
 ) -> list[AssetReport]:
     """Compute every metric for every asset present in `snapshots`.
 
@@ -116,12 +120,17 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
         denomination: Units for the volume-based metrics.
         top_n: How many holders the concentration share covers.
         exclude: Addresses to leave out of the holder distribution.
+        unmeasured: Assets whose data could not be fetched. Their metrics are
+            left undefined rather than computed from an empty frame, because an
+            empty frame otherwise reads as "did not trade" -- a finding this
+            package must not manufacture from a failed request.
 
     Returns:
         One report per asset, ordered by asset uid.
     """
     mode = VolumeMode(mode)
     denomination = Denomination(denomination)
+    unknown = set(unmeasured)
     reports: list[AssetReport] = []
 
     for asset_uid in sorted(snapshots["asset_uid"].unique().to_list()):
@@ -129,30 +138,61 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
         asset_transfers = _for_asset(transfers, str(asset_uid))
         asset_holders = _for_asset(holders, str(asset_uid))
 
+        if str(asset_uid) in unknown:
+            symbols = [s for s in asset_snapshots["symbol"].to_list() if s]
+            reports.append(
+                AssetReport(
+                    asset_uid=str(asset_uid),
+                    symbol=str(symbols[0]) if symbols else None,
+                    metrics={},
+                    window=window,
+                    mode=mode,
+                    notes=(
+                        "transfer or holder data could not be fetched for this asset, so "
+                        "nothing about its activity is known. This is not the same as "
+                        "having measured no activity.",
+                    ),
+                )
+            )
+            continue
+
         metrics: dict[str, MetricResult] = {}
-        if not asset_transfers.is_empty():
-            metrics["turnover_ratio"] = turnover_ratio(
-                asset_transfers,
-                asset_snapshots,
-                window=window,
-                mode=mode,
-                denomination=denomination,
-            )
-            metrics["volume_per_active_address"] = volume_per_active_address(
-                asset_transfers, window=window, mode=mode, denomination=denomination
-            )
-            metrics["active_holder_ratio"] = active_holder_ratio(
-                asset_transfers,
-                asset_snapshots,
-                window=window,
-                mode=mode,
-                # An observed distribution beats a reported count; see
-                # active_holder_ratio for why.
-                holders=asset_holders if not asset_holders.is_empty() else None,
-            )
-            metrics["total_volume"] = total_volume(
-                asset_transfers, window=window, mode=mode, denomination=denomination
-            )
+        # Computed even when the transfer frame is empty: an asset that did not
+        # move has a turnover of zero, and that is the finding this package
+        # exists to surface. Skipping it would report the quietest assets --
+        # exactly the interesting ones -- as unmeasured.
+        metrics["turnover_ratio"] = turnover_ratio(
+            asset_transfers,
+            asset_snapshots,
+            window=window,
+            mode=mode,
+            denomination=denomination,
+            asset_uid=str(asset_uid),
+        )
+        metrics["volume_per_active_address"] = volume_per_active_address(
+            asset_transfers,
+            window=window,
+            mode=mode,
+            denomination=denomination,
+            asset_uid=str(asset_uid),
+        )
+        metrics["active_holder_ratio"] = active_holder_ratio(
+            asset_transfers,
+            asset_snapshots,
+            window=window,
+            mode=mode,
+            # An observed distribution beats a reported count; see
+            # active_holder_ratio for why.
+            holders=asset_holders if not asset_holders.is_empty() else None,
+            asset_uid=str(asset_uid),
+        )
+        metrics["total_volume"] = total_volume(
+            asset_transfers,
+            window=window,
+            mode=mode,
+            denomination=denomination,
+            asset_uid=str(asset_uid),
+        )
         if not asset_holders.is_empty():
             metrics["top_10_holder_share"] = top_holder_share(
                 asset_holders, asset_snapshots, window=window, n=top_n, exclude=exclude
@@ -160,15 +200,18 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
             metrics["holder_hhi"] = holder_hhi(
                 asset_holders, asset_snapshots, window=window, exclude=exclude
             )
-            if not asset_transfers.is_empty():
-                metrics["dormancy"] = dormancy(
-                    asset_holders,
-                    asset_transfers,
-                    asset_snapshots,
-                    window=window,
-                    mode=mode,
-                    exclude=exclude,
-                )
+            # No transfer guard here either. Dormancy takes its asset identity
+            # from the holder frame, and holders with no transfers at all are
+            # entirely dormant -- a share of 1.0, which is the strongest finding
+            # this metric can report rather than a gap in the data.
+            metrics["dormancy"] = dormancy(
+                asset_holders,
+                asset_transfers,
+                asset_snapshots,
+                window=window,
+                mode=mode,
+                exclude=exclude,
+            )
 
         symbols = [s for s in asset_snapshots["symbol"].to_list() if s]
         reports.append(

@@ -18,6 +18,7 @@ from rwa_liquidity.metrics.base import (
     Provenance,
     active_addresses,
     filter_by_mode,
+    impossible_share,
     latest_snapshot,
     prepare_holders,
     resolve_total_supply,
@@ -34,13 +35,16 @@ if TYPE_CHECKING:
 __all__ = ["active_holder_ratio", "dormancy"]
 
 
-def active_holder_ratio(
+def active_holder_ratio(  # noqa: PLR0913 -- the two frames plus mode, and two
+    # optional overrides that make the metric usable on real data: an observed
+    # holder distribution, and the asset identity for an empty window.
     transfers: pl.DataFrame,
     snapshots: pl.DataFrame,
     *,
     window: Window,
     mode: VolumeMode = VolumeMode.SECONDARY_ONLY,
     holders: pl.DataFrame | None = None,
+    asset_uid: str | None = None,
 ) -> MetricResult:
     """Return active addresses in the window over total holders at its end.
 
@@ -68,6 +72,8 @@ def active_holder_ratio(
         mode: Which transfer kinds count as activity.
         holders: An observed `HolderBalance` frame for the same asset. Preferred
             over the snapshot's reported count when present.
+        asset_uid: The asset being measured, so an empty transfer frame still
+            identifies the asset it describes.
 
     Returns:
         The ratio, or `None` if there is no denominator from either source.
@@ -75,7 +81,7 @@ def active_holder_ratio(
     # Coerce rather than trust: a raw string has no `.kinds` and would fail
     # somewhere less obvious than here.
     mode = VolumeMode(mode)
-    asset_uid = single_asset(transfers, what="transfers")
+    asset_uid = single_asset(transfers, what="transfers", expected=asset_uid)
     counted = filter_by_mode(window.clip(transfers, column="block_time"), mode)
     active = active_addresses(counted)
     snapshot = latest_snapshot(snapshots, window)
@@ -194,7 +200,8 @@ def dormancy(  # noqa: PLR0913 -- dormancy is a join across all three normalized
     active_lower = [address.lower() for address in active]
     dormant = kept.filter(~pl.col("address").str.to_lowercase().is_in(active_lower))
 
-    return MetricResult(
-        value=float(dormant["balance"].sum()) / total,
-        provenance=provenance,
-    )
+    share = float(dormant["balance"].sum()) / total
+    problem = impossible_share(share, what="dormancy")
+    if problem is not None:
+        return MetricResult(value=None, provenance=provenance.with_warning(problem))
+    return MetricResult(value=share, provenance=provenance)

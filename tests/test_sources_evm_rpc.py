@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import polars as pl
 import pytest
 
 from rwa_liquidity.cache import ParquetCache
@@ -167,6 +168,17 @@ class Node:
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": request_id, "result": selected})
 
 
+def funded(*entries: dict[str, Any], amount: float = 1_000_000.0) -> list[dict[str, Any]]:
+    """Prepend a mint so the senders in `entries` actually hold something.
+
+    A token's first log cannot be a holder-to-holder transfer: there would be
+    nothing to send. Fixtures that skipped this modelled an impossible chain and
+    are now correctly rejected by the supply-invariant check.
+    """
+    mint = log(sender=ZERO_ADDRESS, recipient=ALICE, amount=amount, block=20_000_000, index=0)
+    return [mint, *entries]
+
+
 def source(cache_root: Path, node: Node, **kwargs: Any) -> EvmRpcSource:
     return EvmRpcSource(
         cache=ParquetCache(cache_root),
@@ -225,44 +237,61 @@ def test_a_contract_without_decimals_is_refused(cache_root: Path) -> None:
 def test_padded_topics_decode_back_to_addresses(cache_root: Path) -> None:
     # Indexed addresses arrive left-padded to a full 32-byte word. Taking the
     # whole word would produce an address that matches nothing.
-    node = Node([log(sender=ALICE, recipient=BOB, amount=100.0)], total_supply=100.0)
+    node = Node(
+        funded(log(sender=ALICE, recipient=BOB, amount=100.0, index=1)),
+        total_supply=1_000_000.0,
+    )
     frame = source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
+    trade = frame.filter(pl.col("kind") == TransferKind.SECONDARY.value)
 
-    assert frame["from_address"].item() == ALICE
-    assert frame["to_address"].item() == BOB
+    assert trade["from_address"].item() == ALICE
+    assert trade["to_address"].item() == BOB
 
 
 def test_amounts_are_scaled_by_the_tokens_decimals(cache_root: Path) -> None:
-    node = Node([log(sender=ALICE, recipient=BOB, amount=1_234.5)], total_supply=1.0)
+    node = Node(
+        funded(log(sender=ALICE, recipient=BOB, amount=1_234.5, index=1)),
+        total_supply=1_000_000.0,
+    )
     frame = source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
-    assert frame["amount"].item() == pytest.approx(1_234.5)
+    trade = frame.filter(pl.col("kind") == TransferKind.SECONDARY.value)
+    assert trade["amount"].item() == pytest.approx(1_234.5)
 
 
 def test_erc721_logs_are_skipped(cache_root: Path, caplog: pytest.LogCaptureFixture) -> None:
     # ERC-721 reuses the ERC-20 Transfer signature but indexes the token id,
     # giving four topics. Counting NFT movements as fungible volume is nonsense.
     node = Node(
-        [
-            log(sender=ALICE, recipient=BOB, amount=100.0, index=0),
-            log(sender=ALICE, recipient=BOB, amount=999.0, index=1, extra_topic=True),
-        ],
-        total_supply=100.0,
+        funded(
+            log(sender=ALICE, recipient=BOB, amount=100.0, index=1),
+            log(sender=ALICE, recipient=BOB, amount=999.0, index=2, extra_topic=True),
+        ),
+        total_supply=1_000_000.0,
     )
     with caplog.at_level(logging.WARNING):
         frame = source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
 
-    assert frame.height == 1
-    assert frame["amount"].item() == pytest.approx(100.0)
+    trades = frame.filter(pl.col("kind") == TransferKind.SECONDARY.value)
+    assert trades.height == 1
+    assert trades["amount"].item() == pytest.approx(100.0)
     assert "ERC-721" in caplog.text
 
 
 def test_transfers_outside_the_window_are_dropped(cache_root: Path) -> None:
     node = Node(
         [
-            log(sender=ALICE, recipient=BOB, amount=100.0, index=0, timestamp=INSIDE),
-            log(sender=ALICE, recipient=BOB, amount=999.0, index=1, timestamp=OUTSIDE),
+            log(
+                sender=ZERO_ADDRESS,
+                recipient=ALICE,
+                amount=1_000_000.0,
+                block=20_000_000,
+                index=0,
+                timestamp=OUTSIDE,
+            ),
+            log(sender=ALICE, recipient=BOB, amount=100.0, index=1, timestamp=INSIDE),
+            log(sender=ALICE, recipient=BOB, amount=999.0, index=2, timestamp=OUTSIDE),
         ],
-        total_supply=100.0,
+        total_supply=1_000_000.0,
     )
     frame = source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
     assert frame["amount"].to_list() == [pytest.approx(100.0)]
@@ -272,13 +301,22 @@ def test_missing_block_timestamp_falls_back_to_a_block_lookup(cache_root: Path) 
     # Not every endpoint puts blockTimestamp on the log. Guessing would move a
     # transfer into or out of its observation window.
     node = Node(
-        [log(sender=ALICE, recipient=BOB, amount=100.0, block=21_000_042, timestamp=None)],
-        total_supply=100.0,
+        funded(
+            log(
+                sender=ALICE,
+                recipient=BOB,
+                amount=100.0,
+                block=21_000_042,
+                index=1,
+                timestamp=None,
+            )
+        ),
+        total_supply=1_000_000.0,
         block_timestamps={21_000_042: INSIDE},
     )
     frame = source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
 
-    assert frame.height == 1
+    assert frame.filter(pl.col("kind") == TransferKind.SECONDARY.value).height == 1
     assert any(method == "eth_getBlockByNumber" for method, _ in node.calls)
 
 
@@ -300,11 +338,24 @@ def test_transfers_are_classified_against_the_primary_market(cache_root: Path) -
 
 
 def test_issuer_addresses_reclassify_treasury_distribution(cache_root: Path) -> None:
-    node = Node([log(sender=TREASURY, recipient=ALICE, amount=500.0)], total_supply=500.0)
+    node = Node(
+        [
+            log(
+                sender=ZERO_ADDRESS,
+                recipient=TREASURY,
+                amount=1_000.0,
+                block=20_000_000,
+                index=0,
+            ),
+            log(sender=TREASURY, recipient=ALICE, amount=500.0, index=1),
+        ],
+        total_supply=1_000.0,
+    )
     frame = source(cache_root, node, issuer_addresses={ASSET.uid: [TREASURY]}).fetch_transfers(
         ASSET, start=START, end=END
     )
-    assert frame["kind"].item() == TransferKind.MINT.value
+    # Both the zero-address mint and the treasury distribution are primary.
+    assert set(frame["kind"].to_list()) == {TransferKind.MINT.value}
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +367,13 @@ def test_a_rejected_range_is_halved_rather_than_guessed(cache_root: Path) -> Non
     # Nodes cap results instead of paginating, and the cap differs by provider.
     # Halving on rejection adapts to whatever the endpoint allows.
     entries = [
-        log(sender=ALICE, recipient=BOB, amount=1.0, block=1_000_000 * (i + 1), index=i)
+        log(
+            sender=ZERO_ADDRESS,
+            recipient=ALICE,
+            amount=1.0,
+            block=1_000_000 * (i + 1),
+            index=i,
+        )
         for i in range(8)
     ]
     node = Node(entries, total_supply=8.0, log_limit=3)
@@ -413,8 +470,13 @@ def test_a_mismatch_against_total_supply_is_flagged_loudly(
 def test_an_incomplete_history_producing_negative_balances_is_flagged(
     cache_root: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    # A sender with no prior credit means logs are missing.
-    node = Node([log(sender=ALICE, recipient=BOB, amount=100.0)], total_supply=100.0)
+    # BOB sends 50 having never received anything. The transfer is within the
+    # supply that exists, so the invariant check passes it, but the ledger it
+    # produces is impossible -- which means logs are missing.
+    node = Node(
+        funded(log(sender=BOB, recipient=TREASURY, amount=50.0, index=1), amount=100.0),
+        total_supply=100.0,
+    )
     with caplog.at_level(logging.WARNING):
         source(cache_root, node).fetch_holders(ASSET)
     assert "negative balance" in caplog.text
@@ -450,3 +512,72 @@ def test_repeated_reads_are_served_from_cache(cache_root: Path) -> None:
     # The head block is deliberately refetched; everything else comes off disk.
     new_calls = [method for method, _ in node.calls[before:]]
     assert new_calls == ["eth_blockNumber"]
+
+
+def test_a_transfer_larger_than_the_supply_in_existence_is_dropped(
+    cache_root: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # CACHE Gold really does emit one of these: 1.1e40 raw units against a supply
+    # of about 1e13. Left in the sum, a single such term would dominate every
+    # volume metric. Outside a mint, a transfer cannot move tokens that do not
+    # exist, so the bound is an ERC-20 invariant rather than a chosen threshold.
+    node = Node(
+        funded(log(sender=ALICE, recipient=BOB, amount=1e30, index=1), amount=1_000.0),
+        total_supply=1_000.0,
+    )
+    with caplog.at_level(logging.WARNING):
+        frame = source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
+
+    assert frame.filter(pl.col("kind") == TransferKind.SECONDARY.value).is_empty()
+    assert "more than the supply in existence" in caplog.text
+
+
+def test_a_historical_transfer_larger_than_current_supply_is_kept(
+    cache_root: Path,
+) -> None:
+    # The bound is the supply at the time, not today's. A fund that has since
+    # shrunk legitimately has historical transfers bigger than its current
+    # supply -- FDIT and the Hamilton Lane feeder both do -- and dropping those
+    # would erase real activity.
+    node = Node(
+        [
+            log(sender=ZERO_ADDRESS, recipient=ALICE, amount=1_000.0, block=20_000_000, index=0),
+            log(sender=ALICE, recipient=BOB, amount=900.0, block=20_000_001, index=1),
+            log(sender=BOB, recipient=ZERO_ADDRESS, amount=950.0, block=20_000_002, index=2),
+        ],
+        total_supply=50.0,
+    )
+    frame = source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
+    trade = frame.filter(pl.col("kind") == TransferKind.SECONDARY.value)
+    assert trade["amount"].item() == pytest.approx(900.0)
+
+
+@pytest.mark.parametrize(
+    ("supplied", "expected"),
+    [
+        ("ZTLN\n\n   ", "ZTLN"),
+        ("  BUIDL  ", "BUIDL"),
+        ("Two   spaces", "Two spaces"),
+        ("\x1b[31mRED\x1b[0m", "[31mRED[0m"),
+        ("\x00\x01\x02", None),
+    ],
+)
+def test_contract_supplied_labels_are_sanitized(
+    cache_root: Path, supplied: str, expected: str | None
+) -> None:
+    # symbol() and name() are whatever the deployer wrote, and they reach a
+    # terminal, a CSV and a LaTeX table. A newline wrecks table alignment -- one
+    # real registry asset returns exactly that -- and an ANSI escape in a name()
+    # would be executed by the terminal printing it.
+    node = Node(total_supply=1.0, symbol=supplied)
+    frame = source(cache_root, node).fetch_asset_snapshots([ASSET])
+    assert frame["symbol"].item() == expected
+
+
+def test_an_absurdly_long_label_is_truncated(cache_root: Path) -> None:
+    node = Node(total_supply=1.0, symbol="X" * 500)
+    frame = source(cache_root, node).fetch_asset_snapshots([ASSET])
+    symbol = frame["symbol"].item()
+    assert symbol is not None
+    assert len(symbol) < 100
+    assert symbol.endswith("...")

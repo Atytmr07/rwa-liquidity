@@ -115,9 +115,11 @@ def test_report_records_the_mode_it_was_computed_under() -> None:
     assert frame["mode"].unique().to_list() == ["all"]
 
 
-def test_an_asset_with_no_transfers_still_gets_a_row() -> None:
-    # Dropping it would hide the asset entirely; undefined metrics are
-    # information.
+def test_an_asset_with_no_transfers_scores_zero_turnover() -> None:
+    # Not None. An asset with supply that did not move has a turnover of zero,
+    # and that is the finding this package exists to surface -- ZTLN has $150m
+    # outstanding and no transfers at all. Reporting it as unmeasured would hide
+    # exactly the assets worth looking at.
     dataset = load_demo_dataset()
     built = build_report(
         dataset.snapshots,
@@ -126,7 +128,8 @@ def test_an_asset_with_no_transfers_still_gets_a_row() -> None:
         window=dataset.window,
     )
     assert len(built) == 3
-    assert built[0].value("turnover_ratio") is None
+    assert built[0].value("turnover_ratio") == 0.0
+    assert built[0].value("dormancy") == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -263,3 +266,25 @@ def test_latex_renders_booleans_as_words_not_numbers() -> None:
     # bool is a subclass of int, so the int branch would otherwise claim it.
     latex = to_latex(pl.DataFrame({"stale": [True]}, schema={"stale": pl.Boolean}))
     assert "yes" in latex
+
+
+def test_an_unmeasured_asset_is_not_reported_as_inactive() -> None:
+    # A failed scan and an asset that did not trade produce the same empty frame.
+    # Reporting the first as the second would manufacture a finding out of a
+    # failed request -- PAXG exceeds the scan budget and briefly read as having
+    # a turnover of exactly zero.
+    dataset = load_demo_dataset()
+    built = build_report(
+        dataset.snapshots,
+        dataset.transfers.clear(),
+        dataset.holders,
+        window=dataset.window,
+        unmeasured={TBILL},
+    )
+    tbill = next(r for r in built if r.asset_uid == TBILL)
+    others = [r for r in built if r.asset_uid != TBILL]
+
+    assert tbill.value("turnover_ratio") is None
+    assert any("nothing about its activity is known" in w for w in tbill.warnings)
+    # The rest are still measured, and still report zero.
+    assert all(r.value("turnover_ratio") == 0.0 for r in others)
