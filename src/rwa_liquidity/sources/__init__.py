@@ -25,6 +25,7 @@ from rwa_liquidity.sources.defillama import (
     DeFiLlamaProtocolTvlSource,
 )
 from rwa_liquidity.sources.dune import HOLDER_COLUMNS, TRANSFER_COLUMNS, DuneSource
+from rwa_liquidity.sources.evm_rpc import DEFAULT_RPC_URL, TRANSFER_TOPIC, EvmRpcSource
 from rwa_liquidity.sources.http import CachedJSONClient, JSONResponse
 from rwa_liquidity.sources.registry import (
     RegistryEntry,
@@ -34,13 +35,16 @@ from rwa_liquidity.sources.registry import (
 from rwa_liquidity.sources.rwa_xyz import RwaXyzSource
 
 __all__ = [
+    "DEFAULT_RPC_URL",
     "HOLDER_COLUMNS",
     "TRANSFER_COLUMNS",
+    "TRANSFER_TOPIC",
     "CachedJSONClient",
     "Capability",
     "DeFiLlamaPricesSource",
     "DeFiLlamaProtocolTvlSource",
     "DuneSource",
+    "EvmRpcSource",
     "JSONResponse",
     "RegistryEntry",
     "RegistryError",

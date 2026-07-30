@@ -19,6 +19,7 @@ than introducing a second storage format.
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 
@@ -51,6 +52,20 @@ _STATUS_COLUMN: Final = "status_code"
 # Longest error body worth quoting back. Providers sometimes return an HTML
 # error page, and pasting all of it into an exception helps nobody.
 _ERROR_EXCERPT: Final = 200
+
+# Status codes at or above this are the server's fault and worth retrying.
+_SERVER_ERROR: Final = 500
+
+#: Rate limiting. Retryable, but it is the server asking for a pause rather than
+#: a transient fault, so it gets a longer one.
+_TOO_MANY_REQUESTS: Final = 429
+
+#: Seconds between retry attempts, multiplied by the attempt number.
+_RETRY_PAUSE: Final = 1.0
+
+#: Base pause after a rate-limit response. Longer, because retrying quickly is
+#: what caused it.
+_THROTTLE_PAUSE: Final = 3.0
 
 
 class _Unset:
@@ -206,6 +221,97 @@ class CachedJSONClient:
             retrieved_at=retrieved_at,
         )
         return JSONResponse(payload=payload, retrieved_at=retrieved_at, from_cache=False)
+
+    def post_json(  # noqa: PLR0913 -- same distinct axes as get_json, plus the
+        # retry budget, which only the RPC caller needs.
+        self,
+        url: str,
+        *,
+        dataset: str,
+        body: Mapping[str, Any],
+        cache_params: Mapping[str, ParamValue],
+        ttl: timedelta | _Unset | None = _UNSET,
+        refresh: bool = False,
+        retries: int = 0,
+    ) -> JSONResponse:
+        """POST `body` as JSON, reading through the cache.
+
+        JSON-RPC needs POST, so the cache key cannot be derived from the URL --
+        every request goes to the same endpoint. `cache_params` is therefore
+        required rather than optional: the caller must say what makes this
+        request distinct.
+
+        Args:
+            url: Absolute URL to post to.
+            dataset: Cache namespace within this source.
+            body: The JSON-RPC envelope.
+            cache_params: What identifies this request.
+            ttl: Maximum acceptable age. Omit for the client default.
+            refresh: Skip the read, fetch, and overwrite.
+            retries: Extra attempts on a 5xx or a timeout. Public RPC endpoints
+                return transient gateway errors under load, which is worth
+                retrying; a 4xx means the request is wrong and is not retried.
+
+        Returns:
+            The decoded response.
+
+        Raises:
+            SourceFetchError: On a network failure, a non-success status that
+                survived the retries, or a body that is not valid JSON.
+        """
+        key = CacheKey(source=self.source, dataset=dataset, params=dict(cache_params))
+        effective_ttl: timedelta | None = self.default_ttl if isinstance(ttl, _Unset) else ttl
+
+        if not refresh:
+            entry = self.cache.get(key, ttl=effective_ttl)
+            if entry is not None:
+                return JSONResponse(
+                    payload=self._decode(str(entry.frame[_RESPONSE_COLUMN].item()), url),
+                    retrieved_at=entry.retrieved_at,
+                    from_cache=True,
+                )
+
+        retrieved_at = datetime.now(UTC)
+        last_error = ""
+        for attempt in range(retries + 1):
+            pause = _RETRY_PAUSE
+            try:
+                response = self._client.post(url, json=dict(body))
+            except httpx.HTTPError as error:
+                last_error = f"request failed: {error}"
+            else:
+                if not response.is_error:
+                    payload = self._decode(response.text, url)
+                    self.cache.put(
+                        key,
+                        pl.DataFrame(
+                            {
+                                _URL_COLUMN: [str(response.url)],
+                                _STATUS_COLUMN: [response.status_code],
+                                _RESPONSE_COLUMN: [response.text],
+                            }
+                        ),
+                        retrieved_at=retrieved_at,
+                    )
+                    return JSONResponse(
+                        payload=payload, retrieved_at=retrieved_at, from_cache=False
+                    )
+                last_error = f"HTTP {response.status_code}: {response.text[:_ERROR_EXCERPT]}"
+                if response.status_code == _TOO_MANY_REQUESTS:
+                    # The server is asking for a pause rather than reporting a
+                    # fault, so it gets a longer one than a transient 5xx.
+                    pause = _THROTTLE_PAUSE
+                elif response.status_code < _SERVER_ERROR:
+                    # Any other 4xx means the request itself is wrong. Retrying
+                    # it wastes another call and cannot succeed.
+                    break
+            if attempt < retries:
+                # Linear rather than exponential: these endpoints recover in
+                # about a second, and a long backoff would stall a scan that
+                # issues thousands of requests.
+                time.sleep(pause * (attempt + 1))
+
+        raise SourceFetchError(f"{self.source}: {url} {last_error}")
 
     def _key(
         self,
