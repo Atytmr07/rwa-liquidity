@@ -51,6 +51,13 @@ DEFAULT_WINDOW_DAYS: Final = 30
 #: too incomplete for a concentration figure to be quoted without a caveat.
 COVERAGE_FLOOR: Final = 0.99
 
+#: How far after a window's end a snapshot may still be used to describe the
+#: state at that end. A live source reads the chain as it is now, and a
+#: full-history scan takes minutes, so the reading always post-dates the window
+#: it was requested for. An hour against a 30-day window is immaterial; a day is
+#: not, and is refused.
+SNAPSHOT_GRACE: Final = timedelta(hours=1)
+
 
 class MetricInputError(Exception):
     """A metric was given frames it cannot compute over."""
@@ -246,11 +253,20 @@ def latest_snapshot(snapshots: pl.DataFrame, window: Window) -> dict[str, object
     Raises:
         MetricInputError: If no snapshot falls at or before the window's end.
     """
-    eligible = snapshots.filter(pl.col("as_of") <= window.end.astimezone(UTC))
+    # The cutoff carries a grace period rather than landing exactly on the
+    # window's end. A live source reads the chain as it is now, and a
+    # full-history scan takes minutes, so a reading requested for the window end
+    # necessarily arrives after it. Applying the grace only when *nothing* else
+    # qualifies is not enough: one source whose timestamp happens to fall inside
+    # the window would then win outright and the fields only a slightly-late
+    # source reported would vanish, which is how a supply figure that was
+    # fetched correctly still shows up as missing.
+    cutoff = window.end.astimezone(UTC) + SNAPSHOT_GRACE
+    eligible = snapshots.filter(pl.col("as_of") <= cutoff)
     if eligible.is_empty():
         raise MetricInputError(
-            f"no snapshot at or before {window.end.isoformat()}; the earliest available "
-            f"is {snapshots['as_of'].min()!r}"
+            f"no snapshot within {SNAPSHOT_GRACE} of {window.end.isoformat()}; the "
+            f"earliest available is {snapshots['as_of'].min()!r}"
         )
 
     ordered = eligible.sort(["as_of", "source"]).to_dicts()

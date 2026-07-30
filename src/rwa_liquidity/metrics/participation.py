@@ -40,11 +40,20 @@ def active_holder_ratio(
     *,
     window: Window,
     mode: VolumeMode = VolumeMode.SECONDARY_ONLY,
+    holders: pl.DataFrame | None = None,
 ) -> MetricResult:
     """Return active addresses in the window over total holders at its end.
 
     An address is active if it appears on either side of a counted transfer.
     Burn addresses are not participants and are not counted.
+
+    The denominator prefers an **observed** holder distribution over a reported
+    count. A distribution derived from the full transfer history and checked
+    against the contract's own supply is exact, whereas a provider's
+    `holder_count` is a figure to be taken on faith and is frequently absent.
+    Where `holders` is supplied its row count is used and the provenance says so;
+    otherwise the reported count is used; if neither exists the metric is
+    undefined.
 
     The ratio can exceed 1. That is not a bug: an address can trade during the
     window and hold nothing by the end of it, so the numerator counts people the
@@ -57,9 +66,11 @@ def active_holder_ratio(
         snapshots: An `AssetSnapshot` frame for the same asset.
         window: The observation period.
         mode: Which transfer kinds count as activity.
+        holders: An observed `HolderBalance` frame for the same asset. Preferred
+            over the snapshot's reported count when present.
 
     Returns:
-        The ratio, or `None` if no holder count was reported.
+        The ratio, or `None` if there is no denominator from either source.
     """
     # Coerce rather than trust: a raw string has no `.kinds` and would fail
     # somewhere less obvious than here.
@@ -69,38 +80,53 @@ def active_holder_ratio(
     active = active_addresses(counted)
     snapshot = latest_snapshot(snapshots, window)
 
+    observed = holders.height if holders is not None and not holders.is_empty() else None
+    reported_raw = snapshot.get("holder_count")
+    reported = int(reported_raw) if reported_raw is not None else None  # type: ignore[call-overload]
+
     provenance = Provenance(
         metric="active_holder_ratio",
         asset_uid=asset_uid,
-        sources=sources_of(transfers, snapshots),
+        sources=sources_of(transfers, snapshots)
+        if holders is None
+        else sources_of(transfers, snapshots, holders),
         window=window,
         n_records=counted.height,
         mode=mode,
         exclusions=("burn addresses excluded from the active address count",),
     )
 
-    reported = snapshot.get("holder_count")
-    if reported is None:
+    denominator = observed if observed is not None else reported
+    if denominator is None:
         return MetricResult(
             value=None,
             provenance=provenance.with_warning(
-                "the snapshot reports no holder_count, so there is no denominator"
+                "no holder distribution was observed and no source reported a "
+                "holder_count, so there is no denominator"
             ),
         )
-
-    holders = int(reported)  # type: ignore[call-overload]
-    if holders <= 0:
+    if observed is not None:
+        provenance = provenance.with_warning(
+            f"the denominator is the {observed} holders actually observed, not a "
+            f"reported count"
+            + (
+                f"; the reported count was {reported}"
+                if reported is not None and reported != observed
+                else ""
+            )
+        )
+    if denominator <= 0:
         return MetricResult(
             value=None,
             provenance=provenance.with_warning(
-                f"holder_count is {holders}, so the ratio is undefined"
+                f"the holder count is {denominator}, so the ratio is undefined"
             ),
         )
 
-    ratio = len(active) / holders
+    ratio = len(active) / denominator
     if ratio > 1:
         provenance = provenance.with_warning(
-            f"{len(active)} addresses were active but only {holders} hold the asset at "
+            f"{len(active)} addresses were active but only {denominator} hold the asset at "
             f"the end of the window; addresses that traded out are counted in the "
             f"numerator and not the denominator"
         )

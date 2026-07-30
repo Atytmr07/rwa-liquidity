@@ -142,7 +142,13 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
                 asset_transfers, window=window, mode=mode, denomination=denomination
             )
             metrics["active_holder_ratio"] = active_holder_ratio(
-                asset_transfers, asset_snapshots, window=window, mode=mode
+                asset_transfers,
+                asset_snapshots,
+                window=window,
+                mode=mode,
+                # An observed distribution beats a reported count; see
+                # active_holder_ratio for why.
+                holders=asset_holders if not asset_holders.is_empty() else None,
             )
             metrics["total_volume"] = total_volume(
                 asset_transfers, window=window, mode=mode, denomination=denomination

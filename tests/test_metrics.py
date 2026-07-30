@@ -484,12 +484,6 @@ def test_metrics_refuse_to_aggregate_across_assets() -> None:
         total_volume(two, window=WINDOW)
 
 
-def test_a_snapshot_after_the_window_is_not_used() -> None:
-    late = snapshot_frame().with_columns(as_of=pl.lit(WINDOW.end).dt.offset_by("1d"))
-    with pytest.raises(MetricInputError, match="no snapshot at or before"):
-        turnover_ratio(transfers_frame(), late, window=WINDOW)
-
-
 def test_window_must_be_ordered_and_aware() -> None:
     with pytest.raises(MetricInputError, match="not after"):
         Window(start=WINDOW.end, end=WINDOW.start)
@@ -499,3 +493,54 @@ def test_window_must_be_ordered_and_aware() -> None:
 
 def test_default_window_is_thirty_days() -> None:
     assert Window.ending(WINDOW.end).days == 30
+
+
+def test_a_snapshot_taken_just_after_the_window_is_still_used() -> None:
+    # A live source reads the chain as it is now, and a full-history scan takes
+    # minutes, so the reading always post-dates the window it was asked for.
+    # Refusing it would mean no metric at all for any live measurement.
+    late = snapshot_frame().with_columns(as_of=pl.lit(WINDOW.end).dt.offset_by("5m"))
+    result = turnover_ratio(transfers_frame(), late, window=WINDOW)
+    assert result.value == pytest.approx(0.16)
+
+
+def test_a_snapshot_a_day_after_the_window_is_still_refused() -> None:
+    # An hour against a 30-day window is immaterial. A day is not.
+    late = snapshot_frame().with_columns(as_of=pl.lit(WINDOW.end).dt.offset_by("1d"))
+    with pytest.raises(MetricInputError, match="no snapshot within"):
+        turnover_ratio(transfers_frame(), late, window=WINDOW)
+
+
+def test_a_late_source_still_contributes_the_fields_only_it_reported() -> None:
+    # The trap this guards: a source whose timestamp falls inside the window but
+    # which reports no supply would otherwise win outright, and the supply a
+    # slightly-later source did fetch would read as missing.
+    price_only = snapshot_frame(total_supply=None, holder_count=None).with_columns(
+        source=pl.lit("price_feed"), as_of=pl.lit(WINDOW.end).dt.offset_by("-1h")
+    )
+    supply_only = snapshot_frame(market_value_usd=None).with_columns(
+        source=pl.lit("on_chain"), as_of=pl.lit(WINDOW.end).dt.offset_by("2m")
+    )
+    result = turnover_ratio(transfers_frame(), pl.concat([price_only, supply_only]), window=WINDOW)
+    assert result.value == pytest.approx(0.16)
+
+
+def test_active_holder_ratio_prefers_an_observed_distribution() -> None:
+    # An observed distribution checked against on-chain supply is exact; a
+    # reported count is a figure taken on faith. Here the two disagree: five
+    # holder rows against a reported count of 50. Under secondary_only three
+    # addresses were active, so 3/5 = 0.6 rather than 3/50 = 0.06.
+    result = active_holder_ratio(
+        transfers_frame(),
+        snapshot_frame(holder_count=50),
+        window=WINDOW,
+        holders=holders_frame(),
+    )
+    assert result.value == pytest.approx(0.6)
+    assert any("actually observed" in w for w in result.provenance.warnings)
+    assert any("reported count was 50" in w for w in result.provenance.warnings)
+
+
+def test_active_holder_ratio_falls_back_to_the_reported_count() -> None:
+    result = active_holder_ratio(transfers_frame(), snapshot_frame(), window=WINDOW)
+    assert result.value == pytest.approx(0.6)  # 3 of 5 reported holders
