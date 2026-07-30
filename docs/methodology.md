@@ -265,7 +265,11 @@ denominator, it takes the most recent non-null value per field with ties broken
 deterministically by source name — a mechanical rule, not a judgement about which
 provider is right.
 
-**Two of the four adapters have never run against their live APIs.** rwa.xyz and
+**The holder distributions behind the published findings are verified, not trusted.** They are reconstructed from the full on-chain transfer history and checked against each contract's `totalSupply()`; a mismatch is reported as making the distribution unreliable. That removes the truncation caveat in SS2.5 for any asset measured through `evm_rpc`, and only for those.
+
+**Full-history reconstruction has a ceiling.** Past roughly 250,000 transfer logs the scan is refused rather than run against a free public endpoint, so actively traded tokens cannot be measured this way at all.
+
+**Two of the five adapters have never run against their live APIs.** rwa.xyz and
 Dune were implemented against published documentation because no keys were
 available. Their tests prove they handle the documented shapes and nothing more.
 See `docs/data-sources.md` for the specific assumptions that remain unverified.

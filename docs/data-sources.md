@@ -13,6 +13,7 @@ as such. The distinction is kept explicit throughout, because "the docs say" and
 
 | Source | Asset snapshots | Transfers | Holders | Key required |
 |---|---|---|---|---|
+| `evm_rpc` | yes | yes | yes | **no** |
 | `defillama_prices` | yes | no | no | no |
 | `defillama_protocol_tvl` | yes | no | no | no |
 | `rwa_xyz` | yes* | no | no | yes |
@@ -28,6 +29,84 @@ A source declares its capabilities rather than implementing every method and
 returning nothing for the parts it cannot serve. This matters: an empty transfer
 frame means "this asset did not trade", which is a finding. A source that cannot
 see transfers at all must not be able to produce that finding by accident.
+
+---
+
+## Ethereum JSON-RPC (`evm_rpc`)
+
+Keyless, and the only source that answers all three questions. Verified against a
+public endpoint on 2026-07-30.
+
+### Endpoint selection
+
+Most "public RPC" endpoints do **not** serve `eth_getLogs`. Measured across nine
+candidates:
+
+| Endpoint | `eth_call` | `eth_getLogs` |
+|---|---|---|
+| `rpc.mevblocker.io` | yes | **yes, 10,000-result cap** |
+| `ethereum-rpc.publicnode.com` | yes | 403 Forbidden |
+| `1rpc.io/eth` | yes | capped at 50 blocks |
+| `eth.drpc.org` | yes | 400, "can't route your request" |
+| `eth-mainnet.public.blastapi.io` | yes | 400 |
+| `eth.merkle.io` | yes | method not found |
+| `cloudflare-eth.com`, `rpc.ankr.com/eth` | no | no |
+
+`rpc.mevblocker.io` is the default. Override it with `EVM_RPC_URL`.
+
+### What it reads
+
+* `eth_call` for `decimals()`, `totalSupply()`, `symbol()` and `name()`. These are
+  contract state, so they are exact rather than a provider's index of it.
+  `symbol()` and `name()` are decoded for both the conformant dynamic `string`
+  encoding and the older `bytes32` one, because real RWA tokens use both.
+* `eth_getLogs` filtered on the `Transfer` topic, from block 0 to the head.
+
+### Sharp edges, all handled
+
+* **Result caps, not pagination.** Nodes reject an over-large log query instead of
+  paginating it, and the cap differs by provider. The adapter halves the block
+  range on rejection rather than guessing a safe span, which adapts to any
+  endpoint at the cost of one wasted request per split. BUIDL's full history took
+  nine requests, four of them splits.
+* **`blockTimestamp` on logs.** This endpoint includes it, avoiding a request per
+  block. Where absent, the adapter looks the block up and caches it. A guessed
+  timestamp would move a transfer into or out of its observation window.
+* **ERC-721 shares the ERC-20 event signature.** It indexes the token id as well,
+  giving four topics instead of three. Four-topic logs are skipped and counted in
+  a warning; treating NFT movements as fungible volume would be nonsense.
+* **Addresses arrive left-padded** to a full 32-byte word inside indexed topics.
+* **Rate limiting.** A full scan issues its requests in a burst, which trips
+  Cloudflare's limiter on the endpoint above. Requests are paced 150 ms apart, and
+  a 429 is retried after a longer pause than a transient 5xx.
+
+### Holder reconstruction, and why it is verifiable
+
+Balances come from replaying every `Transfer` since deployment as a ledger. The
+result is summed and compared against `totalSupply()`.
+
+For BUIDL and OUSG the two matched **to the raw unit**, with zero negative
+balances. That makes the distribution correct by construction: there is no
+provider to trust and no truncated top-N list, which removes the single largest
+caveat on every concentration metric in this package.
+
+A mismatch means balances change by some mechanism other than transfers, most
+often a rebasing token, and is reported as making the distribution unreliable.
+Negative balances mean the log history is incomplete, and are reported too.
+
+### Where it stops
+
+Tractability rests on tokenized funds being thin. Full histories measured:
+
+| Asset | Logs since deployment | Result |
+|---|---|---|
+| OUSG | ~2,200 | 1 request |
+| BUIDL | ~15,000 | 9 requests, ~3 s |
+| PAXG | ~254,600 | refused, over the 250,000 budget |
+| XAUt | ~254,300 | refused |
+
+Tokenized commodities trade like ordinary crypto assets. The adapter refuses with
+an explanation rather than issuing thousands of requests against a free endpoint.
 
 ---
 

@@ -14,6 +14,81 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-07-30 -- A keyless on-chain adapter, and holder balances derived rather than fetched
+
+**Decided:** `EvmRpcSource` reads `eth_getLogs` and `eth_call` from a public
+Ethereum endpoint, and reconstructs holder balances by replaying a token's entire
+`Transfer` history from deployment.
+
+**Alternatives:** wait for a Dune key; ship only synthetic demonstrations; take a
+provider's holder index on trust.
+
+**Why:** The package could demonstrate its metrics but had measured nothing. Every
+metric needs transfer-level data and every provider selling it needs a key, so the
+repository's central claim rested entirely on constructed data. A public node
+serves the same data for free.
+
+**The part that makes it worth more than a workaround:** after replaying the
+ledger, the reconstructed balances are summed and compared against the contract's
+own `totalSupply()`. For BUIDL and OUSG they matched to the raw unit with zero
+negative balances, which makes the holder distribution correct *by construction*.
+That removes the truncation caveat that would otherwise sit on every concentration
+metric, and it is only possible because the data is derived rather than fetched. A
+mismatch means balances change by some mechanism other than transfers -- rebasing,
+most often -- and is reported as making the distribution unreliable rather than
+being quietly absorbed.
+
+**Why it is tractable at all:** replaying a full history sounds prohibitive and is
+not, for exactly the assets this package studies. Tokenized funds are thin --
+BUIDL's complete history is ~15,000 logs in nine requests. Tokenized commodities
+are not: PAXG and XAUt exceed 250,000 logs and are refused. The boundary is
+informative in itself, and it is enforced with a budget rather than discovered by
+hammering a free endpoint.
+
+**Endpoint choice was measured, not assumed.** Of nine candidate public endpoints,
+one served `eth_getLogs`: `rpc.mevblocker.io`. The rest answered `eth_call` and
+then returned 403, a 50-block cap, or a routing error. The table is in
+`docs/data-sources.md` so the choice can be rechecked rather than trusted.
+
+---
+
+## 2026-07-30 -- An observed holder distribution outranks a reported count
+
+**Decided:** `active_holder_ratio` uses the row count of an observed
+`HolderBalance` frame as its denominator when one is available, falling back to a
+source's reported `holder_count` only when it is not.
+
+**Alternatives:** always use the reported count; require the caller to choose.
+
+**Why:** A distribution reconstructed from the full transfer history and checked
+against on-chain supply is exact. A provider's `holder_count` is a figure taken on
+faith, and is frequently absent -- which left the metric undefined for every live
+measurement even though the holder set was sitting in the next frame along. The
+provenance records which denominator was used and names the reported count when
+the two disagree, so the substitution is visible rather than silent.
+
+---
+
+## 2026-07-30 -- Snapshots are accepted up to an hour after a window closes
+
+**Decided:** `latest_snapshot` accepts observations up to `SNAPSHOT_GRACE`
+(one hour) past the window's end, and refuses anything later.
+
+**Alternatives:** require every snapshot at or before the window end.
+
+**Why:** A live source reads the chain as it is *now*, and a full-history scan
+takes minutes. A snapshot requested for a window ending at the moment of the
+request therefore always arrives after it, so the strict rule silently discarded
+every on-chain supply figure and reported turnover as undefined.
+
+The first attempt at this applied the grace only when *nothing else* qualified,
+which was not enough: a price feed whose timestamp happened to fall inside the
+window won outright, and the supply that had been fetched correctly still read as
+missing. The grace now applies to the cutoff itself. An hour against a 30-day
+window is immaterial; a day is not, and still raises.
+
+---
+
 ## 2026-07-29 -- The LaTeX writer is hand-written, not `pandas.to_latex`
 
 **Decided:** `export/writers.py` renders LaTeX itself, in about forty lines.

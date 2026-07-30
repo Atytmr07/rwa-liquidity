@@ -9,6 +9,22 @@ it ingests from multiple sources, normalizes to one schema, and computes a
 documented set of liquidity metrics whose outputs are reproducible and traceable
 back to the raw records they came from.
 
+## What it found
+
+Measured against Ethereum mainnet with no API key, 30 days to 2026-07-30:
+
+| BlackRock BUIDL — $224.8M, **59 holders** | Counting all transfers | Counting only secondary trades |
+|---|---|---|
+| Turnover | 0.2015 | **0.0187** |
+| Dormancy | 3.0% | **96.2%** |
+
+731 transfers, of which **696 were issuance and 32 were actual trading**. Raw
+transfer volume overstates this fund's secondary liquidity by **10.8x**, and the
+factor is asset-specific: for Ondo's OUSG it is 2.1x.
+
+Full write-up, including where the method stops working, in
+[`docs/findings.md`](docs/findings.md).
+
 ## Try it in two commands
 
 No API keys, no configuration.
@@ -16,6 +32,13 @@ No API keys, no configuration.
 ```bash
 uv sync
 ```
+
+```bash
+uv run rwa-liquidity report
+```
+
+That measures real assets on-chain; the first run takes a minute or two and is
+cached afterwards. For an instant run against the committed sample dataset:
 
 ```bash
 uv run rwa-liquidity report --demo
@@ -91,15 +114,29 @@ arithmetic done by hand is in [`tests/test_metrics.py`](tests/test_metrics.py).
 
 | Source | Provides | Key | Verified live |
 |---|---|---|---|
+| **Ethereum JSON-RPC** | transfers, holder balances, supply | **no** | **yes** |
 | [DeFiLlama](https://defillama.com) prices | price, symbol, decimals | no | yes |
 | [DeFiLlama](https://defillama.com) protocol TVL | protocol-level value | no | yes |
-| [rwa.xyz](https://rwa.xyz) | market values, supply, holder counts | yes | **no** |
-| [Dune Analytics](https://dune.com) | transfers, holder balances | yes | **no** |
+| [rwa.xyz](https://rwa.xyz) | market values, supply, holder counts | yes | no |
+| [Dune Analytics](https://dune.com) | transfers, holder balances | yes | no |
 
-"Verified live" means the adapter has been run against the real API. The rwa.xyz
-and Dune adapters were written against published documentation because no keys
-were available; their tests prove they handle the documented shapes and nothing
-more. Every unverified assumption is listed in
+The on-chain adapter is the one that matters, and it needs no credentials. It
+reconstructs holder balances by replaying every `Transfer` event since a token was
+deployed, then **checks the reconstruction against the contract's own
+`totalSupply()`**. For BUIDL and OUSG the two match to the raw unit, so the holder
+distribution is correct by construction rather than trusted: no provider index, no
+truncated top-N list. A mismatch means balances change by some mechanism other
+than transfers, most often rebasing, and the adapter says so instead of publishing
+a distribution it cannot justify.
+
+That is tractable only because tokenized funds are thin. BUIDL's entire history is
+about 15,000 logs; a gold token's is a quarter of a million and the scan is
+refused.
+
+"Verified live" means the adapter has been run against the real API. rwa.xyz and
+Dune were written against published documentation because no keys were available;
+their tests prove they handle the documented shapes and nothing more. Every
+unverified assumption is listed in
 [`docs/data-sources.md`](docs/data-sources.md), which also carries the SQL a
 saved Dune query must produce.
 
@@ -166,9 +203,13 @@ version:
   The package warns when that pattern is possible; it cannot rule it out.
 - **Holder lists are usually truncated**, which biases HHI downward. Disclosed,
   not corrected.
-- **Two of four adapters are unverified against their live APIs.**
-- **The shipped sample dataset is synthetic.** It demonstrates the metrics; it
-  measures nothing.
+- **Ethereum only, and one 30-day window.** The published findings are a snapshot,
+  not a trend, and multi-chain assets are measured on a single chain.
+- **Full-history reconstruction has a ceiling.** Tokens with more than ~250,000
+  transfer logs are refused rather than scanned against a free endpoint.
+- **Two of five adapters are unverified against their live APIs** (rwa.xyz, Dune).
+- **The shipped sample dataset is synthetic.** It demonstrates the metrics; the
+  real measurements come from the on-chain adapter.
 
 ## Roadmap
 
@@ -180,9 +221,10 @@ version:
 - [x] **6** Cross-source reconciliation
 - [x] **7** CLI, export, demo mode
 - [x] **8** Methodology docs and worked example
+- [x] **9** Keyless on-chain adapter, live pipeline, published findings
 
-Not done: `report` without `--demo` needs a Dune key to be wired end to end, and
-the two keyed adapters need a first run against their real APIs.
+Not done: the two keyed adapters (rwa.xyz, Dune) need a first run against their
+real APIs, and the registry covers four assets rather than the full RWA universe.
 
 ## License
 
