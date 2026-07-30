@@ -14,6 +14,59 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-07-30 -- History is reconstructed, not extrapolated backwards
+
+**Decided:** supply and holder distributions for a past window are replayed from
+the transfer ledger to that window's end. `EvmRpcSource.supply_snapshots` and
+`holder_snapshots` produce them; `latest_holders` selects the one belonging to the
+window being measured.
+
+**Alternatives:** apply the current figures to every window; trend only the
+denominator-free metrics.
+
+**Why:** Applying today's supply backwards is not an approximation but an error.
+BUIDL's supply across the six trended windows was 172m, 169m, 148m, 178m, 187m
+and 225m; dividing an early window's volume by 225m would understate its turnover
+by a third. For holders it is worse -- today's balances against an earlier,
+smaller supply give a share above 1, which the metrics refuse, so the series came
+back full of holes rather than merely wrong.
+
+The ledger already walked for the present distribution answers both exactly, from
+the same cached scan. That is the argument for deriving this data rather than
+fetching it, made a second time: no provider publishes a supply history or a
+holder history, and both fall out of a walk already being done.
+
+`latest_holders` was the missing piece. Without it the metrics summed every
+instant in a multi-snapshot holder frame, multiplying the balances and tripping
+the share guard on every asset.
+
+---
+
+## 2026-07-30 -- The issuer caveat is checked rather than assumed
+
+**Decided:** `EvmRpcSource.describe_issuance` profiles a token's complete history
+and reports whether any issuance passes through the zero address.
+
+**Alternatives:** keep the blanket caveat; try to infer issuer addresses
+automatically.
+
+**Why:** The methodology's largest stated weakness was that an issuer
+distributing from a treasury would have its issuance counted as trading, and that
+this could not be detected. For an adapter that already replays full history, it
+partly can: a token that has *ever* minted through the zero address has visible
+issuance, so a window without mints simply means issuance happened earlier.
+
+Run against the registry, **all ten measurable assets mint through the zero
+address**, which turns a caveat on every published figure into a checked fact.
+That is worth more than the code that produces it.
+
+Issuer addresses are still not inferred. Where issuance is invisible the command
+names the largest recipient of supply as a *candidate* for review; guessing wrong
+would move real trading into the primary bucket, which is the same error in the
+opposite direction.
+
+---
+
 ## 2026-07-30 -- A keyless on-chain adapter, and holder balances derived rather than fetched
 
 **Decided:** `EvmRpcSource` reads `eth_getLogs` and `eth_call` from a public

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
+from rwa_liquidity.metrics.base import Window, latest_holders
 from rwa_liquidity.metrics.concentration import DEFAULT_TOP_N, holder_hhi, top_holder_share
 from rwa_liquidity.metrics.participation import active_holder_ratio, dormancy
 from rwa_liquidity.metrics.volume import (
@@ -29,7 +30,7 @@ from rwa_liquidity.schema.types import Denomination, VolumeMode
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
 
-    from rwa_liquidity.metrics.base import MetricResult, Window
+    from rwa_liquidity.metrics.base import MetricResult
 
 __all__ = ["METRIC_COLUMNS", "AssetReport", "build_report", "report_frame"]
 
@@ -90,6 +91,16 @@ class AssetReport:
 
 def _for_asset(frame: pl.DataFrame, asset_uid: str) -> pl.DataFrame:
     return frame.filter(pl.col("asset_uid") == asset_uid)
+
+
+def _holders_for_window(holders: pl.DataFrame, window: Window) -> pl.DataFrame | None:
+    """Return the distribution belonging to `window`, or `None` if there is none.
+
+    The active-holder denominator has to count the same set of holders the
+    concentration metrics use, or the two would describe different moments.
+    """
+    selected = latest_holders(holders, window)
+    return None if selected.is_empty() else selected
 
 
 def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
@@ -183,7 +194,7 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
             mode=mode,
             # An observed distribution beats a reported count; see
             # active_holder_ratio for why.
-            holders=asset_holders if not asset_holders.is_empty() else None,
+            holders=_holders_for_window(asset_holders, window),
             asset_uid=str(asset_uid),
         )
         metrics["total_volume"] = total_volume(

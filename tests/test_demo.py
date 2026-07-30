@@ -288,3 +288,17 @@ def test_an_unmeasured_asset_is_not_reported_as_inactive() -> None:
     assert any("nothing about its activity is known" in w for w in tbill.warnings)
     # The rest are still measured, and still report zero.
     assert all(r.value("turnover_ratio") == 0.0 for r in others)
+
+
+def test_trend_command_rejects_an_unknown_metric() -> None:
+    result = runner.invoke(app, ["trend", "--metric", "nonsense"])
+    assert result.exit_code == 2
+    assert "Unknown metric" in result.output
+    # The message has to name the valid choices, or the user is left guessing.
+    assert "turnover_ratio" in result.output
+
+
+def test_trend_and_issuance_are_documented_in_the_help() -> None:
+    output = runner.invoke(app, ["--help"]).output
+    assert "trend" in output
+    assert "issuance" in output

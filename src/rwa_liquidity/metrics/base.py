@@ -37,6 +37,7 @@ __all__ = [
     "Window",
     "active_addresses",
     "filter_by_mode",
+    "latest_holders",
     "latest_snapshot",
     "prepare_holders",
     "resolve_total_supply",
@@ -320,6 +321,39 @@ def impossible_share(value: float, *, what: str) -> str | None:
         f"because the token rebases, so balances change without a transfer -- and "
         f"no meaningful share can be derived from them."
     )
+
+
+def latest_holders(holders: pl.DataFrame, window: Window) -> pl.DataFrame:
+    """Return the holder distribution as it stood at the end of `window`.
+
+    A holder frame may carry several distributions, one per instant, once they are
+    reconstructed historically rather than only for the present. Summing all of
+    them would multiply the balances and make every share exceed 1, so the one
+    belonging to this window has to be selected -- exactly as `latest_snapshot`
+    selects a supply figure.
+
+    Where several sources describe the same instant they are all kept: two
+    providers disagreeing about who holds what is a reconciliation question, not
+    something to resolve here.
+
+    Args:
+        holders: A `HolderBalance` frame for one asset.
+        window: The observation period.
+
+    Returns:
+        The rows at the latest `as_of` at or shortly after the window's end, or an
+        empty frame when nothing was observed by then. Empty is the honest answer:
+        it means no distribution is known for that window, and a metric computed
+        from a later one would describe a different set of holders.
+    """
+    if holders.is_empty():
+        return holders
+    cutoff = window.end.astimezone(UTC) + SNAPSHOT_GRACE
+    eligible = holders.filter(pl.col("as_of") <= cutoff)
+    if eligible.is_empty():
+        return eligible
+    chosen = eligible["as_of"].max()
+    return eligible.filter(pl.col("as_of") == chosen)
 
 
 def prepare_holders(

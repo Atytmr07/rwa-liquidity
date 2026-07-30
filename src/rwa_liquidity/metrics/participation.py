@@ -19,6 +19,7 @@ from rwa_liquidity.metrics.base import (
     active_addresses,
     filter_by_mode,
     impossible_share,
+    latest_holders,
     latest_snapshot,
     prepare_holders,
     resolve_total_supply,
@@ -171,7 +172,7 @@ def dormancy(  # noqa: PLR0913 -- dormancy is a join across all three normalized
     # somewhere less obvious than here.
     mode = VolumeMode(mode)
     asset_uid = single_asset(holders, what="holders")
-    kept, notes = prepare_holders(holders, exclude)
+    kept, notes = prepare_holders(latest_holders(holders, window), exclude)
     total, warnings = resolve_total_supply(kept, snapshots, window)
 
     counted = filter_by_mode(window.clip(transfers, column="block_time"), mode)

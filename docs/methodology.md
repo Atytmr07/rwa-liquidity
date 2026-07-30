@@ -267,6 +267,14 @@ provider is right.
 
 **The holder distributions behind the published findings are verified, not trusted.** They are reconstructed from the full on-chain transfer history and checked against each contract's `totalSupply()`; a mismatch is reported as making the distribution unreliable. That removes the truncation caveat in SS2.5 for any asset measured through `evm_rpc`, and only for those.
 
+**Historical windows use historical state.** Supply and holder distributions for
+a past window are replayed from the ledger to that window's end, not taken from
+the present. Using today's figures would be an error rather than an
+approximation: a share computed from today's balances against an earlier, smaller
+supply exceeds 1, which the metrics refuse outright. Where no distribution is
+known for a window the metric is undefined rather than filled in from a later
+one.
+
 **Full-history reconstruction has a ceiling.** Past roughly 250,000 transfer logs the scan is refused rather than run against a free public endpoint, so actively traded tokens cannot be measured this way at all.
 
 **Two of the five adapters have never run against their live APIs.** rwa.xyz and

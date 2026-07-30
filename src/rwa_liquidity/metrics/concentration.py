@@ -24,6 +24,7 @@ from rwa_liquidity.metrics.base import (
     MetricResult,
     Provenance,
     impossible_share,
+    latest_holders,
     prepare_holders,
     resolve_total_supply,
     single_asset,
@@ -73,7 +74,7 @@ def top_holder_share(
         raise MetricInputError(f"n must be positive, got {n}")
 
     asset_uid = single_asset(holders, what="holders")
-    kept, notes = prepare_holders(holders, exclude)
+    kept, notes = prepare_holders(latest_holders(holders, window), exclude)
     total, warnings = resolve_total_supply(kept, snapshots, window)
 
     provenance = Provenance(
@@ -132,7 +133,7 @@ def holder_hhi(
         MetricInputError: If total supply is non-positive.
     """
     asset_uid = single_asset(holders, what="holders")
-    kept, notes = prepare_holders(holders, exclude)
+    kept, notes = prepare_holders(latest_holders(holders, window), exclude)
     total, warnings = resolve_total_supply(kept, snapshots, window)
 
     provenance = Provenance(

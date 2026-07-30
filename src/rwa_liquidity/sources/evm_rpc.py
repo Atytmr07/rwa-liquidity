@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Final
 
@@ -54,7 +55,7 @@ if TYPE_CHECKING:
     from rwa_liquidity.cache.store import ParquetCache
     from rwa_liquidity.schema.asset import AssetRef
 
-__all__ = ["DEFAULT_RPC_URL", "TRANSFER_TOPIC", "EvmRpcSource"]
+__all__ = ["DEFAULT_RPC_URL", "TRANSFER_TOPIC", "EvmRpcSource", "IssuanceProfile"]
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,62 @@ DEFAULT_MIN_INTERVAL: Final = 0.15
 #: makes this exact, so the only reason to have it at all is to drop the dust a
 #: rounding-based token can leave behind.
 _DUST: Final = 0
+
+
+@dataclass(frozen=True, slots=True)
+class IssuanceProfile:
+    """What a token's complete history says about how it issues.
+
+    The point of this is to replace a blanket caveat with a per-asset fact. The
+    zero-address rule can only see issuance that goes through the zero address;
+    whether a given token's issuance does is answerable from its own history.
+
+    Attributes:
+        asset_uid: The asset described.
+        transfers: Every classifiable transfer in its history.
+        mints: Transfers out of the zero or a burn address.
+        burns: Transfers into one.
+        minted_supply: Total ever minted, human-scaled.
+        first_mint_block: Where issuance began, if it is visible at all.
+        largest_recipient: The address that received the most minted supply. A
+            candidate treasury when issuance is not visible, offered for review
+            rather than applied: guessing an issuer address wrong would move real
+            trading into the primary bucket.
+        largest_recipient_share: That address's share of everything minted.
+    """
+
+    asset_uid: str
+    transfers: int
+    mints: int
+    burns: int
+    minted_supply: float
+    first_mint_block: int | None
+    largest_recipient: str | None
+    largest_recipient_share: float | None
+
+    @property
+    def issuance_is_visible(self) -> bool:
+        """Return whether any issuance passes through the zero address."""
+        return self.mints > 0
+
+    def caveat(self) -> str | None:
+        """Return what this profile means for the asset's secondary figures."""
+        if self.issuance_is_visible:
+            return None
+        share = self.largest_recipient_share
+        suffix = ""
+        if self.largest_recipient is not None and share is not None:
+            suffix = (
+                f" The largest recipient of supply is {self.largest_recipient}, holding "
+                f"{share:.1%} of everything issued; if that is the issuer's own address, "
+                f"passing it as an issuer address would reclassify its distributions."
+            )
+        return (
+            "no issuance passes through the zero address anywhere in this token's "
+            "history, so the zero-address rule cannot see how it is issued. Some of "
+            "what is counted as secondary trading may be distribution from an issuer, "
+            "which makes every secondary figure for this asset an upper bound." + suffix
+        )
 
 
 def _to_address(topic: str) -> str:
@@ -740,6 +797,227 @@ class EvmRpcSource(Source):
                 asset.uid,
                 len(holders),
             )
+
+    def holder_snapshots(
+        self,
+        asset: AssetRef,
+        instants: Sequence[datetime],
+        *,
+        refresh: bool = False,
+    ) -> pl.DataFrame:
+        """Return `HolderBalance` rows giving the distribution at each instant.
+
+        Concentration and dormancy for a past window need the holders as they
+        stood then. Using the present distribution is not an approximation but an
+        error: balances that sum to more than the supply of an earlier window
+        produce a share above 1, which the metrics correctly refuse, leaving the
+        series full of holes.
+
+        Replaying the ledger to each instant removes the problem rather than
+        working around it. One walk serves every instant.
+
+        Args:
+            asset: The asset to reconstruct distributions for.
+            instants: Moments to snapshot. Order does not matter.
+            refresh: Bypass the cache and rescan.
+
+        Returns:
+            A validated `HolderBalance` frame, one row per address with a positive
+            balance at each instant.
+        """
+        head = self.head_block()
+        facts = self._token_facts(asset, refresh=refresh, block=head)
+        scale = 10 ** facts["decimals"]
+
+        collected: list[dict[str, Any]] = []
+        self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
+        records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
+
+        wanted = sorted(set(instants))
+        ledger: dict[str, int] = defaultdict(int)
+        captured: dict[datetime, dict[str, int]] = {}
+        position = 0
+
+        def capture() -> dict[str, int]:
+            return {
+                address: value
+                for address, value in ledger.items()
+                if value > _DUST and address not in BURN_ADDRESSES
+            }
+
+        for record in records:
+            moment = record["block_time"]
+            while position < len(wanted) and wanted[position] < moment:
+                captured[wanted[position]] = capture()
+                position += 1
+            amount = int(record["raw_amount"])
+            ledger[str(record["from_address"])] -= amount
+            ledger[str(record["to_address"])] += amount
+        for remaining in wanted[position:]:
+            captured[remaining] = capture()
+
+        rows: list[dict[str, Any]] = []
+        retrieved = datetime.now(UTC)
+        for moment in wanted:
+            for address, value in captured[moment].items():
+                rows.append(
+                    {
+                        "asset_uid": asset.uid,
+                        "source": self.name,
+                        "retrieved_at": retrieved,
+                        "as_of": moment,
+                        "address": address,
+                        "balance": value / scale,
+                        "balance_usd": None,
+                    }
+                )
+
+        schema = dict(polars_schema(HolderBalance))
+        frame = pl.DataFrame(rows, schema=schema) if rows else pl.DataFrame(schema=schema)
+        return validate(HolderBalance, frame, origin=self.name)
+
+    def supply_snapshots(
+        self,
+        asset: AssetRef,
+        instants: Sequence[datetime],
+        *,
+        refresh: bool = False,
+    ) -> pl.DataFrame:
+        """Return `AssetSnapshot` rows giving supply at each of `instants`.
+
+        Supply is accumulated from the transfer ledger -- mints less burns, in
+        block order -- so each figure is the supply as it actually stood at that
+        moment rather than today's applied backwards. That distinction matters:
+        BUIDL has minted roughly ten times its current supply over its life, so a
+        turnover ratio for a window a year ago divided by today's supply would be
+        wrong by that factor.
+
+        The walk is the same one `fetch_holders` uses and shares its cache, and
+        the last point is checked against `totalSupply()` on the way past.
+
+        Args:
+            asset: The asset to build a supply history for.
+            instants: Moments to report supply at. Order does not matter.
+            refresh: Bypass the cache and rescan.
+
+        Returns:
+            A validated `AssetSnapshot` frame, one row per instant, carrying only
+            the fields a ledger can justify: supply, decimals, symbol and name.
+        """
+        head = self.head_block()
+        facts = self._token_facts(asset, refresh=refresh, block=head)
+        scale = 10 ** facts["decimals"]
+
+        collected: list[dict[str, Any]] = []
+        self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
+        records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
+
+        # One pass over the ledger, emitting the running supply as each requested
+        # instant is passed. Records are already in block order.
+        wanted = sorted(set(instants))
+        supply = 0
+        at_instant: dict[datetime, int] = {}
+        position = 0
+        for record in records:
+            moment = record["block_time"]
+            while position < len(wanted) and wanted[position] < moment:
+                at_instant[wanted[position]] = supply
+                position += 1
+            amount = int(record["raw_amount"])
+            if record["from_address"] in BURN_ADDRESSES:
+                supply += amount
+            elif record["to_address"] in BURN_ADDRESSES:
+                supply -= amount
+        for remaining in wanted[position:]:
+            at_instant[remaining] = supply
+
+        reported = facts.get("raw_total_supply")
+        if reported is not None and supply != reported:
+            logger.warning(
+                "%s: the supply history for %s ends at %s but totalSupply() reports %s. "
+                "Supply changes by some mechanism other than mint and burn events, so "
+                "every historical supply figure for this token is unreliable.",
+                self.name,
+                asset.uid,
+                f"{supply / scale:,.6f}",
+                f"{reported / scale:,.6f}",
+            )
+
+        schema = dict(polars_schema(AssetSnapshot))
+        frame = pl.DataFrame(
+            {
+                "asset_uid": [asset.uid] * len(wanted),
+                "source": [self.name] * len(wanted),
+                "retrieved_at": [datetime.now(UTC)] * len(wanted),
+                "as_of": list(wanted),
+                "symbol": [facts["symbol"]] * len(wanted),
+                "name": [facts["name"]] * len(wanted),
+                "decimals": [facts["decimals"]] * len(wanted),
+                "total_supply": [at_instant[moment] / scale for moment in wanted],
+                "market_value_usd": [None] * len(wanted),
+                "price_usd": [None] * len(wanted),
+                "holder_count": [None] * len(wanted),
+            },
+            schema=schema,
+        )
+        return validate(AssetSnapshot, frame, origin=self.name)
+
+    def describe_issuance(self, asset: AssetRef, *, refresh: bool = False) -> IssuanceProfile:
+        """Summarise how `asset` issues, from its complete transfer history.
+
+        Uses the same cached scan as `fetch_holders`, so calling both costs one
+        history walk rather than two.
+
+        Args:
+            asset: The asset to profile.
+            refresh: Bypass the cache and rescan.
+
+        Returns:
+            The profile. `caveat()` on the result says what it implies for the
+            asset's secondary figures.
+        """
+        head = self.head_block()
+        facts = self._token_facts(asset, refresh=refresh, block=head)
+        scale = 10 ** facts["decimals"]
+
+        collected: list[dict[str, Any]] = []
+        self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
+        records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
+
+        received: dict[str, int] = defaultdict(int)
+        minted = 0
+        mints = burns = 0
+        first_mint: int | None = None
+        for record in records:
+            amount = int(record["raw_amount"])
+            if record["from_address"] in BURN_ADDRESSES:
+                mints += 1
+                minted += amount
+                received[str(record["to_address"])] += amount
+                if first_mint is None:
+                    first_mint = int(record["block"])
+            elif record["to_address"] in BURN_ADDRESSES:
+                burns += 1
+
+        # With no visible issuance, fall back to who received the most supply
+        # overall: on a token pre-minted in its constructor, that is whoever the
+        # initial allocation went to.
+        if not received:
+            for record in records:
+                received[str(record["to_address"])] += int(record["raw_amount"])
+
+        largest = max(received.items(), key=lambda item: item[1], default=None)
+        total = sum(received.values())
+        return IssuanceProfile(
+            asset_uid=asset.uid,
+            transfers=len(records),
+            mints=mints,
+            burns=burns,
+            minted_supply=minted / scale,
+            first_mint_block=first_mint,
+            largest_recipient=None if largest is None else largest[0],
+            largest_recipient_share=(None if largest is None or total <= 0 else largest[1] / total),
+        )
 
     def close(self) -> None:
         """Close the underlying HTTP client."""

@@ -58,6 +58,13 @@ from rwa_liquidity.metrics import (
     turnover_ratio,
     volume_per_active_address,
 )
+from rwa_liquidity.metrics.base import latest_holders
+from rwa_liquidity.metrics.trend import (
+    AssetTrend,
+    TrendPoint,
+    build_trend,
+    windows_ending,
+)
 from rwa_liquidity.schema import AssetSnapshot, HolderBalance, TransferEvent, validate
 from rwa_liquidity.schema.types import ZERO_ADDRESS, Denomination, TransferKind, VolumeMode
 
@@ -583,3 +590,82 @@ def test_dormancy_above_one_is_refused_too() -> None:
     result = dormancy(inflated, transfers_frame(), snapshot_frame(), window=WINDOW)
     assert result.value is None
     assert any("not a possible share" in w for w in result.provenance.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Trends
+# ---------------------------------------------------------------------------
+
+
+def test_windows_tile_without_overlap() -> None:
+    periods = windows_ending(WINDOW.end, days=30, periods=3)
+    assert len(periods) == 3
+    # Oldest first, and each window's end is the next one's start, so a transfer
+    # on a boundary is counted exactly once across the series.
+    assert periods[-1].end == WINDOW.end
+    assert periods[0].end == periods[1].start
+    assert periods[1].end == periods[2].start
+
+
+def test_a_trend_tracks_one_metric_across_windows() -> None:
+    periods = windows_ending(WINDOW.end, days=30, periods=2)
+    # The worked example's transfers all sit in the latest window; the earlier one
+    # holds only the out-of-window transfer, which is not secondary volume.
+    snapshots = pl.concat(
+        [snapshot_frame().with_columns(as_of=pl.lit(period.end)) for period in periods]
+    )
+    holders = pl.concat(
+        [holders_frame().with_columns(as_of=pl.lit(period.end)) for period in periods]
+    )
+    trends = build_trend(
+        snapshots, transfers_frame(), holders, windows=periods, metric="turnover_ratio"
+    )
+
+    assert len(trends) == 1
+    assert trends[0].values[-1] == pytest.approx(0.16)
+    assert trends[0].symbol == "X"
+
+
+def test_holder_distributions_are_selected_per_window() -> None:
+    # A holder frame carrying several instants must not have its balances summed
+    # across them; that multiplies supply and makes every share exceed 1.
+
+    periods = windows_ending(WINDOW.end, days=30, periods=2)
+    stacked = pl.concat(
+        [holders_frame().with_columns(as_of=pl.lit(period.end)) for period in periods]
+    )
+    assert stacked.height == 10
+    assert latest_holders(stacked, periods[-1]).height == 5
+    assert latest_holders(stacked, periods[0]).height == 5
+
+
+def test_a_window_with_no_holder_distribution_yields_nothing() -> None:
+    # Empty is the honest answer: a distribution from a later instant would
+    # describe a different set of holders.
+
+    periods = windows_ending(WINDOW.end, days=30, periods=2)
+    only_recent = holders_frame().with_columns(as_of=pl.lit(periods[-1].end))
+    assert latest_holders(only_recent, periods[0]).is_empty()
+
+
+def test_direction_is_coarse_on_purpose() -> None:
+    def trend_of(*values: float | None) -> AssetTrend:
+        periods = [WINDOW] * len(values)
+        return AssetTrend(
+            asset_uid=ASSET,
+            symbol="X",
+            metric="turnover_ratio",
+            mode=VolumeMode.SECONDARY_ONLY,
+            points=tuple(
+                TrendPoint(window=w, value=v) for w, v in zip(periods, values, strict=True)
+            ),
+        )
+
+    assert trend_of(0.10, 0.30).direction == "rising"
+    assert trend_of(0.30, 0.10).direction == "falling"
+    # Within a tenth is noise at these counts, not a trend.
+    assert trend_of(0.100, 0.105).direction == "flat"
+    assert trend_of(0.0, 0.0).direction == "flat at zero"
+    assert trend_of(0.0, 0.5).direction == "rising from zero"
+    assert trend_of(0.1).direction == "insufficient data"
+    assert trend_of(None, None).direction == "insufficient data"

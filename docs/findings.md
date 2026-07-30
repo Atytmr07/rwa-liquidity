@@ -149,6 +149,62 @@ The boundary is informative rather than merely a limitation: the assets whose
 liquidity is worth questioning are precisely the ones thin enough to measure
 exhaustively. Gold tokens do not need this analysis; they visibly trade.
 
+## 7a. Six months, not one snapshot
+
+The cross-section above says how liquid these assets were. It cannot say whether
+tokenized markets are deepening, which is the next question. Supply and holder
+distributions are reconstructed from the ledger **at each window's end** rather
+than taken from today, so a fund that has grown does not show a falsely
+collapsing turnover because its denominator moved. BUIDL's supply over the six
+windows was 172m, 169m, 148m, 178m, 187m, 225m -- using the last figure
+throughout would have distorted every earlier ratio.
+
+```bash
+uv run rwa-liquidity trend --metric turnover_ratio
+```
+
+**Secondary turnover**, six consecutive 30-day windows, oldest first:
+
+| Asset | 03-02 | 04-01 | 05-01 | 05-31 | 06-30 | 07-30 | |
+|---|---|---|---|---|---|---|---|
+| ATT | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
+| BUIDL | 0.0384 | 0.0503 | 0.2128 | 0.1145 | 0.0133 | 0.0187 | falling |
+| CANA | 0.0960 | 0.5313 | 0.0176 | 0.1251 | 0.0548 | 0.0669 | falling |
+| CGT | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
+| FDIT | 0.1868 | 0.2121 | 0.4119 | 0.2019 | 0.6238 | 1.0767 | rising |
+| HLSCOPE | 0.0147 | 0.7181 | 0.2839 | 0.1201 | 0.0003 | 0.0728 | rising |
+| OUSG | 0.3141 | 0.6831 | 0.7677 | 0.3345 | 0.8556 | 0.1971 | falling |
+| RCOIN | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
+| USDM | 0.1067 | 0.0577 | 0.0759 | 0.0131 | 0.0229 | 0.0058 | falling |
+| ZTLN | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
+
+**Four assets recorded no secondary trading in any of the six windows.** A single
+month of silence could be a quiet month; six is a property of the asset.
+
+Nothing here shows a market deepening in aggregate. Two of ten rose, four fell,
+four never moved. The single asset with a clear upward series, FDIT, has three
+holders — its rising turnover is three parties trading with each other more often,
+which is not the same as a market forming.
+
+**Concentration is the flattest series in the dataset.** Top-10 share moved by
+less than a percentage point over six months for seven of the nine measurable
+assets:
+
+| Asset | 03-02 | 07-30 | |
+|---|---|---|---|
+| BUIDL | 82.3% | 83.6% | flat |
+| OUSG | 82.4% | 92.9% | **rising** |
+| CANA | 99.3% | 99.5% | flat |
+| RCOIN | 97.3% | 97.1% | flat |
+| CGT | 99.2% | 99.2% | flat |
+| ATT | 99.2% | 99.2% | flat |
+| FDIT / HLSCOPE / ZTLN | 100.0% | 100.0% | flat |
+
+OUSG is the one clear mover, and it concentrated: its top-10 share rose ten
+points. BUIDL's dormancy also rose over the period, 84.9% to 96.2%.
+
+Over six months, on these assets, tokenization did not broaden ownership.
+
 ## 8. Caveats
 
 In full in [`methodology.md`](methodology.md). Those bearing directly on the
@@ -157,13 +213,21 @@ figures above:
 * **Ethereum only.** BUIDL also exists on Aptos, Solana, Avalanche, Optimism,
   Arbitrum, Polygon and BNB Chain; roughly a third of its value is on Ethereum.
   Cross-chain bridging appears here as ordinary transfers.
-* **Issuer classification rests on the zero-address rule.** BUIDL, OUSG and FDIT
-  mint from the zero address, so their issuance is visible. CANA, USDM, CGT,
-  HLSCOPE and ATT show **no mints at all**, which means either that issuance
-  predates the window or that they distribute from a treasury this registry has
-  not been told about. In the second case some of what is counted as secondary is
-  really issuance, so those secondary figures are **upper bounds**. The adapter
-  warns whenever this pattern is possible.
+* **Issuer classification rests on the zero-address rule, and that rule is
+  verified here.** This was previously a blanket caveat. It is now a checked fact:
+
+  ```bash
+  uv run rwa-liquidity issuance
+  ```
+
+  **All ten measurable assets mint through the zero address.** Their mint counts
+  over full history run from 2 (ZTLN) to 11,622 (BUIDL), and every one has a first
+  mint block. A window containing no mints therefore means issuance happened
+  earlier, not that it is hidden — so the secondary figures above are
+  measurements rather than upper bounds. Had any asset shown zero mints across its
+  entire history, the rule would have been blind to it and the command would say
+  so, naming the largest recipient of supply as a candidate issuer address for
+  review.
 * **Addresses are not investors.** 59 addresses could be 59 institutions or a few
   behind custodians. Concentration bounds the truth in both directions.
 * **Off-chain settlement is invisible.** Securitize and similar transfer agents

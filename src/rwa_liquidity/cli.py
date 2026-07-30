@@ -198,6 +198,57 @@ def _collect_live(
     return result.snapshots, result.transfers, result.holders, result.unmeasured
 
 
+def _collect_history(
+    periods: Sequence[Window], *, refresh: bool
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, frozenset[str]]:
+    """Gather transfers plus a supply and holder history for every registry asset.
+
+    One scan per asset serves every window: the on-chain adapter walks the full
+    history anyway, so a window a year old costs no extra requests.
+    """
+    from rwa_liquidity.sources import (  # noqa: PLC0415
+        EvmRpcSource,
+        SourceError,
+        load_defillama_registry,
+    )
+
+    ends = [period.end for period in periods]
+    entries = load_defillama_registry()
+    console.print(
+        f"Reconstructing [bold]{len(entries)}[/bold] assets over "
+        f"{len(periods)} windows from on-chain history."
+    )
+
+    snapshots: list[pl.DataFrame] = []
+    transfers: list[pl.DataFrame] = []
+    holders: list[pl.DataFrame] = []
+    unmeasured: set[str] = set()
+
+    source = EvmRpcSource()
+    try:
+        for entry in entries:
+            try:
+                snapshots.append(source.supply_snapshots(entry.ref, ends, refresh=refresh))
+                holders.append(source.holder_snapshots(entry.ref, ends, refresh=refresh))
+                transfers.append(
+                    source.fetch_transfers(
+                        entry.ref, start=periods[0].start, end=periods[-1].end, refresh=refresh
+                    )
+                )
+            except SourceError as error:
+                unmeasured.add(entry.ref.uid)
+                console.print(f"  [yellow]-[/yellow] {entry.symbol}: {str(error)[:90]}")
+    finally:
+        source.close()
+
+    def merge(frames: list[pl.DataFrame]) -> pl.DataFrame:
+        populated = [frame for frame in frames if not frame.is_empty()]
+        return pl.concat(populated) if populated else frames[0]
+
+    console.print()
+    return merge(snapshots), merge(transfers), merge(holders), frozenset(unmeasured)
+
+
 @app.command()
 def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
     # belongs on the command line rather than hidden in a config file.
@@ -276,6 +327,155 @@ def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
             column_labels=dict(METRIC_COLUMNS),
         )
         console.print(f"\nWrote [bold]{written}[/bold]")
+
+
+@app.command()
+def trend(  # noqa: PLR0913 -- window geometry, which metric, which mode, cache
+    # policy and destination. Each changes the output and belongs on the command
+    # line rather than in a config file.
+    *,
+    days: Annotated[
+        int, typer.Option("--days", "-d", min=1, help="Length of each window.")
+    ] = DEFAULT_WINDOW_DAYS,
+    periods: Annotated[
+        int, typer.Option("--periods", "-p", min=2, max=24, help="How many windows.")
+    ] = 6,
+    metric: Annotated[
+        str, typer.Option("--metric", help="Which metric to track.")
+    ] = "turnover_ratio",
+    mode: Annotated[VolumeMode, typer.Option("--mode")] = VolumeMode.SECONDARY_ONLY,
+    refresh: Annotated[bool, typer.Option("--refresh")] = False,
+    out: Annotated[Path | None, typer.Option("--out", "-o")] = None,
+) -> None:
+    """Track one metric across consecutive windows, to see whether it is moving.
+
+    Supply and holder distributions are reconstructed from the ledger at each
+    window's end rather than taken from today, so a fund that has grown does not
+    show a falsely collapsing turnover because its denominator moved.
+    """
+    from rwa_liquidity.metrics.trend import (  # noqa: PLC0415 -- keeps `--version` fast
+        build_trend,
+        trend_frame,
+        windows_ending,
+    )
+
+    known = {name for name, _ in METRIC_COLUMNS}
+    if metric not in known:
+        console.print(
+            f"[red]Unknown metric {metric!r}.[/red] Choose one of: {', '.join(sorted(known))}"
+        )
+        raise typer.Exit(code=2)
+
+    periods_of = windows_ending(datetime.now(UTC), days=days, periods=periods)
+    snapshots, transfers, holders, unmeasured = _collect_history(periods_of, refresh=refresh)
+    trends = build_trend(
+        snapshots,
+        transfers,
+        holders,
+        windows=periods_of,
+        metric=metric,
+        mode=mode,
+        unmeasured=unmeasured,
+    )
+
+    console.print(
+        f"[bold]{metric}[/bold]  mode = {mode}  {periods} windows of {days} days, oldest first"
+    )
+    table = Table(header_style="bold", expand=False)
+    table.add_column("Asset", no_wrap=True)
+    for period in periods_of:
+        # Month-day only: the full date truncates in an 80-column terminal, and
+        # the year is already implied by the header line above the table.
+        table.add_column(f"{period.end:%m-%d}", justify="right")
+    table.add_column("Direction", no_wrap=True)
+
+    for item in trends:
+        table.add_row(
+            item.symbol or item.asset_uid,
+            *(_cell(metric, value) for value in item.values),
+            item.direction,
+        )
+    console.print(table)
+    console.print(
+        "  [dim]Direction compares the first defined point with the last, and is "
+        "deliberately coarse: a handful of observations of a thin market cannot "
+        "support a growth rate.[/dim]"
+    )
+
+    if out is not None:
+        from rwa_liquidity.export import write_frame  # noqa: PLC0415
+
+        written = write_frame(
+            trend_frame(trends),
+            out,
+            caption=f"{metric} over {periods} windows of {days} days ({mode}).",
+        )
+        console.print(f"\nWrote [bold]{written}[/bold]")
+
+
+@app.command()
+def issuance(*, refresh: Annotated[bool, typer.Option("--refresh")] = False) -> None:
+    """Report how each registry asset issues, from its complete history.
+
+    The primary/secondary split rests on issuance passing through the zero
+    address. Whether a given token's does is a fact about that token, checkable
+    from its own history, and this is where the blanket caveat gets replaced by a
+    per-asset answer.
+    """
+    from rwa_liquidity.sources import (  # noqa: PLC0415
+        EvmRpcSource,
+        SourceError,
+        load_defillama_registry,
+    )
+
+    source = EvmRpcSource()
+    table = Table(header_style="bold", expand=False)
+    for column, justify in (
+        ("Asset", "left"),
+        ("Transfers", "right"),
+        ("Mints", "right"),
+        ("Burns", "right"),
+        ("Ever minted", "right"),
+        ("Issuance visible", "left"),
+    ):
+        table.add_column(column, justify=justify)  # type: ignore[arg-type]
+
+    caveats: list[tuple[str, str]] = []
+    try:
+        for entry in load_defillama_registry():
+            try:
+                profile = source.describe_issuance(entry.ref, refresh=refresh)
+            except SourceError as error:
+                table.add_row(
+                    entry.symbol, "[dim]not measurable[/dim]", "", "", "", str(error)[:40]
+                )
+                continue
+            table.add_row(
+                entry.symbol,
+                f"{profile.transfers:,}",
+                f"{profile.mints:,}",
+                f"{profile.burns:,}",
+                f"{profile.minted_supply:,.2f}",
+                "[green]yes[/green]" if profile.issuance_is_visible else "[yellow]no[/yellow]",
+            )
+            note = profile.caveat()
+            if note is not None:
+                caveats.append((entry.symbol, note))
+    finally:
+        source.close()
+
+    console.print(table)
+    if caveats:
+        console.print("\n[bold]Caveats[/bold]")
+        for symbol, note in caveats:
+            console.print(f"  [yellow]•[/yellow] [bold]{symbol}[/bold]: {note}")
+    else:
+        console.print(
+            "\n[green]Issuance is visible for every asset measured.[/green] Each one "
+            "mints through the zero address, so the primary/secondary split can see how "
+            "it is issued and the secondary figures are measurements rather than upper "
+            "bounds."
+        )
 
 
 @app.command()

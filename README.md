@@ -31,6 +31,11 @@ corrected with a scalar.
 Eight of the ten exceed an HHI of 2,500, the threshold US antitrust guidelines
 call highly concentrated. Six exceed 5,000.
 
+Over **six consecutive 30-day windows**, four of the ten recorded no secondary
+trading in any window, two rose, four fell, and top-10 concentration moved by
+less than a percentage point for seven of nine. Tokenization did not broaden
+ownership on this sample.
+
 Full write-up, including the assets the method cannot measure and why, in
 **[`docs/findings.md`](docs/findings.md)**.
 
@@ -67,7 +72,20 @@ mode = secondary_only    window = [2026-06-01T00:00:00+00:00, 2026-07-01T00:00:0
 ```
 
 Add `--out metrics.csv`, `--out table.tex`, or `--mode all` to see the same data
-read a different way.
+read a different way. Two more commands:
+
+```bash
+uv run rwa-liquidity trend --metric turnover_ratio
+```
+
+```bash
+uv run rwa-liquidity issuance
+```
+
+`trend` measures consecutive windows with supply and holders reconstructed at
+each window's end. `issuance` checks, per asset, whether the primary/secondary
+split can actually see how that token is issued — the assumption the whole
+method rests on.
 
 ## The thing this gets right
 
@@ -212,8 +230,10 @@ version:
   The package warns when that pattern is possible; it cannot rule it out.
 - **Holder lists are usually truncated**, which biases HHI downward. Disclosed,
   not corrected.
-- **Ethereum only, and one 30-day window.** The published findings are a snapshot,
-  not a trend, and multi-chain assets are measured on a single chain.
+- **Ethereum only.** Multi-chain assets are measured on one chain, and
+  cross-chain bridging appears as ordinary transfers.
+- **Six months of history, ten assets.** Enough for a direction, not for a growth
+  rate, and `trend` says so rather than fitting one.
 - **Full-history reconstruction has a ceiling.** Tokens with more than ~250,000
   transfer logs are refused rather than scanned against a free endpoint.
 - **Two of five adapters are unverified against their live APIs** (rwa.xyz, Dune).
@@ -231,9 +251,11 @@ version:
 - [x] **7** CLI, export, demo mode
 - [x] **8** Methodology docs and worked example
 - [x] **9** Keyless on-chain adapter, live pipeline, published findings
+- [x] **10** Ledger-derived history, six-window trends, issuance verification
 
 Not done: the two keyed adapters (rwa.xyz, Dune) need a first run against their
-real APIs, and the registry covers four assets rather than the full RWA universe.
+real APIs, and the registry covers eleven Ethereum assets rather than the full
+multi-chain RWA universe.
 
 ## License
 
