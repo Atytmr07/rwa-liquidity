@@ -27,7 +27,7 @@ from rwa_liquidity.sources import (
     SourceFetchError,
     SourceTransportError,
 )
-from rwa_liquidity.sources.evm_rpc import TRANSFER_TOPIC
+from rwa_liquidity.sources.evm_rpc import _MIN_BLOCK_STEP, TRANSFER_TOPIC
 
 ASSET = AssetRef.parse("ethereum:0x7712c34205737192402172409a8f7ccef8aa2aec")
 ALICE = "0x" + "a" * 40
@@ -167,7 +167,12 @@ class Node:
 
     def _get_logs(self, query: dict[str, Any], request_id: int) -> httpx.Response:
         low, high = int(query["fromBlock"], 16), int(query["toBlock"], 16)
-        selected = [e for e in self.logs if low <= int(e["blockNumber"], 16) <= high]
+        wanted = str(query["address"]).lower()
+        selected = [
+            e
+            for e in self.logs
+            if low <= int(e["blockNumber"], 16) <= high and e["address"].lower() == wanted
+        ]
         if self.span_limit is not None and high - low + 1 > self.span_limit:
             # What public endpoints actually enforce: a cap on the block span,
             # regardless of how many results the query would return.
@@ -503,6 +508,91 @@ def test_a_span_capped_endpoint_costs_requests_proportional_to_the_token(
     assert queries < 30, f"{queries} log queries for a token 30,000 blocks old"
 
 
+def test_a_dense_stretch_does_not_shrink_the_window_for_everything_after_it(
+    cache_root: Path,
+) -> None:
+    # This one cost five hours of wall clock. BUIDL crowds 11,622 mints into a
+    # few million blocks, so a window sized to the endpoint's span limit holds
+    # more logs than it will return. Narrowing the shared step in response
+    # treated one token's density as a fact about the endpoint: the step fell to
+    # its floor and every window afterwards, for every remaining asset, asked for
+    # 500 blocks at a time. The dense stretch has to be split on its own.
+    deployed = HEAD - 100_000
+    crowd = [
+        log(
+            sender=ZERO_ADDRESS, recipient=ALICE, amount=1.0, block=deployed + 10 + i * 200, index=i
+        )
+        for i in range(40)
+    ]
+    node = Node(
+        crowd,
+        total_supply=40.0,
+        deployed_at=deployed,
+        span_limit=10_000,
+        # The span is acceptable; what it contains is not.
+        log_limit=20,
+    )
+    adapter = source(cache_root, node)
+    frame = adapter.fetch_transfers(ASSET, start=START, end=END)
+
+    assert frame.height == 40
+    spans = [
+        int(params[0]["toBlock"], 16) - int(params[0]["fromBlock"], 16) + 1
+        for method, params in node.calls
+        if method == "eth_getLogs"
+    ]
+    # The narrow queries belong to the crowded window. Everything after it must
+    # go back to asking for the full span the endpoint allows.
+    assert max(spans[-3:]) == adapter._step, f"the step never recovered: {spans[-6:]}"
+    assert len(spans) < 60, f"{len(spans)} queries for a token 100,000 blocks old"
+
+
+def test_the_span_limit_is_read_from_the_node_rather_than_searched_for(
+    cache_root: Path,
+) -> None:
+    # The node states its limit outright. Bisecting for it instead settled on
+    # 6,236 against a real limit of 10,000, because a probe refused for any
+    # other reason -- a rate limit, most likely -- reads as "too wide" and drags
+    # the estimate down for every window afterwards.
+    node = Node(funded(), total_supply=1_000_000.0, span_limit=10_000)
+    adapter = source(cache_root, node)
+    adapter.fetch_transfers(ASSET, start=START, end=END)
+
+    assert adapter._step == 10_000
+    probes = sum(
+        1
+        for method, params in node.calls
+        if method == "eth_getLogs" and params[0]["address"] == ZERO_ADDRESS
+    )
+    assert probes == 1, f"{probes} probes to read a number the node volunteered"
+
+
+def test_an_endpoint_that_states_no_limit_is_bisected_for(cache_root: Path) -> None:
+    # The fallback, for a node that refuses without saying why. Approximate is
+    # acceptable here: a scan that asks for less than it could is slow, not
+    # wrong.
+    node = Node(funded(), total_supply=1_000_000.0, span_limit=10_000)
+
+    def strip_the_reason(request: httpx.Request) -> httpx.Response:
+        response = node.handle(request)
+        body = response.json()
+        if "error" in body and "limit of" in str(body["error"]):
+            body["error"] = {"code": -32602, "message": "query failed"}
+            return httpx.Response(200, json=body)
+        return response
+
+    adapter = EvmRpcSource(
+        cache=ParquetCache(cache_root),
+        client=httpx.Client(transport=httpx.MockTransport(strip_the_reason)),
+        rpc_url="https://node.invalid",
+        min_interval=0.0,
+    )
+    adapter.fetch_transfers(ASSET, start=START, end=END)
+
+    assert adapter._step is not None
+    assert _MIN_BLOCK_STEP <= adapter._step <= 10_000
+
+
 def test_a_generous_endpoint_is_not_punished_for_it(cache_root: Path) -> None:
     # The mirror of the test above: an endpoint with no span cap should answer
     # the whole history in one query. A fixed window size would have issued
@@ -510,7 +600,14 @@ def test_a_generous_endpoint_is_not_punished_for_it(cache_root: Path) -> None:
     node = Node(funded(), total_supply=1_000_000.0)
     source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
 
-    assert sum(1 for method, _ in node.calls if method == "eth_getLogs") == 1
+    # Counted for the token itself: the span probe is one more query, against the
+    # zero address, and it is answered on the first try when nothing is capped.
+    for_token = [
+        params[0]
+        for method, params in node.calls
+        if method == "eth_getLogs" and params[0]["address"].lower() == ASSET.address
+    ]
+    assert len(for_token) == 1
 
 
 def test_a_node_without_history_is_scanned_from_genesis(cache_root: Path) -> None:

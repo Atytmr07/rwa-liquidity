@@ -31,6 +31,7 @@ only possible because the data is derived rather than fetched.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -40,7 +41,7 @@ from typing import TYPE_CHECKING, Any, Final
 import polars as pl
 
 from rwa_liquidity.schema.frames import AssetSnapshot, HolderBalance, TransferEvent
-from rwa_liquidity.schema.types import BURN_ADDRESSES
+from rwa_liquidity.schema.types import BURN_ADDRESSES, ZERO_ADDRESS
 from rwa_liquidity.schema.validation import polars_schema, validate
 from rwa_liquidity.sources.base import (
     Capability,
@@ -114,6 +115,11 @@ DEFAULT_BLOCK_STEP: Final[int | None] = None
 #: Floor on the adaptive step. Below this a full-history scan is hopeless
 #: anyway, and shrinking further would turn one slow scan into a stuck one.
 _MIN_BLOCK_STEP: Final = 500
+
+#: How a node states its own block-span limit, as in "range 24999999 exceeds
+#: limit of 10000". Not every endpoint says so, hence the fallback search, but
+#: the ones that do give an exact answer for one request.
+_SPAN_LIMIT: Final = re.compile(r"limit of (\d+)")
 
 #: Default ceiling on how many `eth_getLogs` calls one scan may issue. A walk
 #: from a token's deployment block in 10,000-block windows is in the hundreds,
@@ -464,44 +470,74 @@ class EvmRpcSource(Source):
         )
         return result if isinstance(result, str) else None
 
-    def _discover_step(self, address: str, low: int, high: int, *, refresh: bool) -> int:
+    def _discover_step(self, head: int, *, refresh: bool) -> int:
         """Find the widest block span this endpoint will answer in one query.
 
-        Asks for the whole range and halves until the answer stops being a
+        Asks for the whole chain and halves until the answer stops being a
         rejection. An endpoint with no span cap settles on the first request, so
         nothing is paid for the generous case; a capped one costs about a dozen.
 
+        Probes against the zero address, which owns no token and so has no
+        Transfer logs anywhere. That leaves the span as the only thing the node
+        can object to. Probing against the token being scanned would conflate the
+        endpoint's span limit with that token's log density -- and the densest
+        stretch of a fund's history is usually issuance, right where the probe
+        would start -- so the limit would come back understated and stay that way
+        for every asset this source goes on to scan.
+
         Deliberately optimistic to begin with. Starting from a conservative guess
         would be safe but permanently slow against an endpoint that would have
-        served the lot, and there is no way to grow a guess that is too small --
-        an accepted query looks the same whether or not a wider one would also
-        have worked.
+        served the lot, and there is no way to grow a guess that is too small: an
+        accepted query looks the same whether or not a wider one would also have
+        worked.
         """
-        step = high - low + 1
-        while step > _MIN_BLOCK_STEP:
+
+        def probe(span: int) -> str | None:
+            """Return `None` if the span was served, or the refusal otherwise."""
             self._requests += 1
             try:
                 self._rpc(
                     "eth_getLogs",
                     [
                         {
-                            "address": address,
+                            "address": ZERO_ADDRESS,
                             "topics": [TRANSFER_TOPIC],
-                            "fromBlock": hex(low),
-                            "toBlock": hex(low + step - 1),
+                            "fromBlock": hex(max(0, head - span + 1)),
+                            "toBlock": hex(head),
                         }
                     ],
                     dataset="eth_getLogs",
-                    cache_key=f"{address}:{low}:{low + step - 1}",
+                    cache_key=f"span-probe:{head}:{span}",
                     refresh=refresh,
                 )
             except SourceTransportError:
                 raise
-            except SourceFetchError:
-                step //= 2
-            else:
-                return step
-        return _MIN_BLOCK_STEP
+            except SourceFetchError as error:
+                return str(error)
+            return None
+
+        refusal = probe(head + 1)
+        if refusal is None:
+            return head + 1
+
+        # Prefer the node's own answer to anything inferred. It states the limit
+        # outright -- "range 24999999 exceeds limit of 10000" -- and reading it
+        # is one request against roughly twenty, exact rather than approximate,
+        # and immune to the failure that made the search unreliable: a refusal
+        # for any *other* reason, a rate limit above all, is indistinguishable
+        # from "too wide" and drags the estimate down. That is the same
+        # conflation `SourceTransportError` exists to prevent, one level up.
+        stated = _SPAN_LIMIT.search(refusal)
+        if stated is not None:
+            return max(_MIN_BLOCK_STEP, int(stated.group(1)))
+
+        # No stated limit, so fall back to bisecting for it. Approximate, and
+        # understates the limit if a probe is refused for an unrelated reason,
+        # but a scan that asks for less than it could is merely slow.
+        step = (head + 1) // 2
+        while step > _MIN_BLOCK_STEP and probe(step) is not None:
+            step //= 2
+        return max(_MIN_BLOCK_STEP, step)
 
     def _scan_logs(self, address: str, head: int, *, refresh: bool) -> list[dict[str, Any]]:
         """Walk the complete Transfer history of `address` up to `head`.
@@ -525,7 +561,7 @@ class EvmRpcSource(Source):
         collected: list[dict[str, Any]] = []
         low = self._deployment_block(address, head, refresh=refresh)
         if self._step is None:
-            self._step = self._discover_step(address, low, head, refresh=refresh)
+            self._step = self._discover_step(head, refresh=refresh)
         low -= low % self._step
         while low <= head:
             # Read the step per window: a rejection shrinks it, and because it
@@ -549,10 +585,10 @@ class EvmRpcSource(Source):
     ) -> None:
         """Fetch Transfer logs for `[low, high]`, splitting when the node balks.
 
-        `_scan_logs` sizes its windows to what the endpoint is believed to
-        accept; this handles the case where that belief is wrong. Rather than
-        guessing, a rejected range is halved and the step is shrunk to match, so
-        the discovery costs a few requests once rather than once per window.
+        `_scan_logs` sizes its windows to the span the endpoint accepts; this
+        handles the other reason a query is refused, which is that the span it
+        accepts holds more logs than it will return at once. Halving resolves
+        that locally, for the dense stretch that caused it.
 
         Only a rejection splits. A request that never reached the node -- DNS
         failure, dropped connection, a 5xx that outlived its retries -- carries
@@ -596,12 +632,18 @@ class EvmRpcSource(Source):
         except SourceFetchError:
             if low >= high:
                 raise
+            # Split this window and only this window. A rejection here is
+            # usually about how many logs the span contains rather than how wide
+            # it is, and log density is a property of one stretch of one token's
+            # history: BUIDL's 11,622 mints crowd a few million blocks, while the
+            # tokens either side of it in the registry are nearly empty. An
+            # earlier version narrowed the shared step whenever any window was
+            # refused, so one dense region dragged the step to its floor and left
+            # every later window -- and every later asset -- asking for 500
+            # blocks at a time. That cost 10,000 requests an asset and five hours
+            # a run. The endpoint's span limit is what the step is for, and
+            # `_discover_step` is what learns it.
             middle = (low + high) // 2
-            # Remember what the endpoint would not take. Halving only, so a
-            # window aligned to the old step stays aligned to the new one.
-            accepted = (high - low + 1) // 2
-            settled = accepted if self._step is None else min(self._step, accepted)
-            self._step = max(_MIN_BLOCK_STEP, settled)
             self._logs(address, low, middle, collected=collected, refresh=refresh)
             self._logs(address, middle + 1, high, collected=collected, refresh=refresh)
             return

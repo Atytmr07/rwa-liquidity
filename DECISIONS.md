@@ -14,6 +14,43 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-08-14 -- The window size is read from the node, not inferred from failures
+
+**Decided:** `_discover_step` asks for the whole chain once and reads the limit
+out of the refusal ("range 24999999 exceeds limit of 10000"), falling back to
+bisection only when the node does not say. A window refused for holding too many
+logs splits on its own and no longer narrows the shared step.
+
+**Alternatives:** bisect for the limit; keep narrowing the shared step on any
+refusal; hard-code a step per endpoint.
+
+**Why:** both of the things this replaces were mine, and both cost a run.
+
+Narrowing the shared step on any refusal treated one token's log density as a
+fact about the endpoint. BUIDL crowds 11,622 mints into a few million blocks, so
+its windows were refused for holding too much; the step fell to its 500-block
+floor and stayed there for every window afterwards and every asset behind it.
+Read back out of the cache, the five-hour run was asking for 500 blocks at a
+time, all of it for one address. Density is local and the recursion already
+handles it; the step is for the endpoint's span limit alone.
+
+Bisecting for that limit then settled on 6,236 against a real limit of 10,000,
+because a probe refused for any other reason -- a rate limit, most likely -- is
+indistinguishable from "too wide" and drags the estimate down permanently. Same
+conflation as the one below, one level up, and the honest fix is the same: stop
+inferring what the node will state outright. One request, exact, and the
+bisection survives as a fallback where it is merely slow rather than wrong.
+
+Probes go to the zero address, which emits no `Transfer` anywhere, so the span
+is the only thing left to refuse. Probing the token being scanned mixed the
+endpoint's limit with that token's density at exactly the wrong place: issuance,
+the densest stretch of a fund's history, is where the probe would start.
+
+Measured against the default endpoint: the limit reads exactly 10,000 in a
+single request, and BUIDL's walk went from 1,028 windows to 641.
+
+---
+
 ## 2026-08-13 -- A rejected request and an unreachable one are different failures
 
 **Decided:** `SourceTransportError` is split out of `SourceFetchError` for
