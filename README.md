@@ -28,8 +28,9 @@ transfer volume overstates this fund's secondary liquidity by **10.8x** — and 
 factor is asset-specific, between 1x and 11x across the set, so it cannot be
 corrected with a scalar.
 
-Eight of the ten exceed an HHI of 2,500, the threshold US antitrust guidelines
-call highly concentrated. Six exceed 5,000.
+Eight of the ten exceed an HHI of 2,500, the threshold the 2010 US Horizontal
+Merger Guidelines call highly concentrated (1,800 under the 2023 revision --
+the same eight clear that bar too). Six exceed 5,000.
 
 Over **six consecutive 30-day windows**, four of the ten recorded no secondary
 trading in any window, two rose, four fell, and top-10 concentration moved by
@@ -51,8 +52,10 @@ uv sync
 uv run rwa-liquidity report
 ```
 
-That measures real assets on-chain; the first run takes a minute or two and is
-cached afterwards. For an instant run against the committed sample dataset:
+That measures real assets on-chain by replaying each token's full transfer
+history. The first run takes **on the order of an hour** for the whole registry
+and is cached afterwards, so later runs are near-instant; a single asset is a
+minute or two. For an instant run against the committed sample dataset:
 
 ```bash
 uv run rwa-liquidity report --demo

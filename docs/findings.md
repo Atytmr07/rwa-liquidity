@@ -103,9 +103,13 @@ asset-specific factor between 1 and 11, which cannot be corrected with a scalar.
 
 ## 5. Concentration is extreme almost everywhere
 
-US antitrust guidelines treat an HHI above 2,500 as highly concentrated. Of the
-ten measured assets, **eight exceed 2,500 and six exceed 5,000**. Top-10 share is
-above 92% for nine of them.
+The 2010 US Horizontal Merger Guidelines treat an HHI above 2,500 as highly
+concentrated; the 2023 revision lowered that threshold to 1,800 (DOJ Antitrust
+Division, [justice.gov/atr/herfindahl-hirschman-index](https://www.justice.gov/atr/herfindahl-hirschman-index)).
+Of the ten measured assets, **eight exceed 2,500 and six exceed 5,000**; the
+same eight also clear the stricter 1,800 threshold (the two that don't, BUIDL
+at 1,618 and OUSG at 1,385, sit between "moderately" and "highly" concentrated
+under either guideline). Top-10 share is above 92% for nine of them.
 
 Two cases deserve separate mention because they invert the usual reading:
 
