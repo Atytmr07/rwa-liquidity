@@ -14,6 +14,48 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-08-13 -- A rejected request and an unreachable one are different failures
+
+**Decided:** `SourceTransportError` is split out of `SourceFetchError` for
+failures where the endpoint never rendered a verdict -- a connection that did not
+land, a 429, a 5xx that outlived its retries. `EvmRpcSource._logs` halves its
+block range only on a real rejection, and lets a transport fault out.
+
+**Alternatives:** keep one error type and cap the recursion depth; retry
+indefinitely inside the scan; treat every failure as a rejection, as before.
+
+**Why:** this was a live bug, not a hypothetical. The splitter existed because
+nodes cap `eth_getLogs` results rather than paginating, so a rejected range is
+usefully answered by asking for half of it. But every failure arrived as the same
+`SourceFetchError`, so when this machine lost DNS part-way through a scan, each
+failed query was "answered" by two narrower queries that failed identically, then
+four. A registry scan that should take about an hour ran for **seven and a half
+hours** and had written 59,000 cache entries when it was stopped, still going.
+
+The tell was that it was not stuck -- it was making steady progress through
+exponentially more work than the task required. A depth cap would have bounded
+the damage without fixing the cause; the cause is that the adapter was reacting
+to information it did not have.
+
+Failing the asset is the right outcome rather than a retreat: the pipeline
+already records per-asset failures without discarding the rest of the registry,
+and because responses are cached individually as they arrive, a re-run resumes
+instead of restarting. Retrying the same request is still done, at the transport
+layer where it belongs, three times with a linear backoff.
+
+`max_log_requests` (default 2,000) is a backstop for the whole class of fault
+rather than this instance of it. It would not have caught this particular bug
+quickly -- a rejection chain does terminate on its own once a span reaches one
+block -- but it turns any future non-converging split into an error naming the
+cause instead of an unbounded wait.
+
+The regression test asserts the property rather than the symptom: with the
+endpoint answering everything except log queries, exactly one distinct block span
+may be attempted. Against the old code it records 26 and takes 157 seconds
+instead of 7 -- the incident in miniature.
+
+---
+
 ## 2026-07-30 -- History is reconstructed, not extrapolated backwards
 
 **Decided:** supply and holder distributions for a past window are replayed from

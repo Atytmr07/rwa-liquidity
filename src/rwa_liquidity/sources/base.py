@@ -65,6 +65,18 @@ class SourceFetchError(SourceError):
     """The provider was reachable but did not return usable data."""
 
 
+class SourceTransportError(SourceFetchError):
+    """The provider could not be reached, or failed in a way unrelated to the request.
+
+    Separated from a plain `SourceFetchError` because callers legitimately react
+    to a rejected request by reformulating it -- a log scan narrows its block
+    range when a node refuses the query -- and that reaction is wrong when the
+    request never arrived. A DNS failure says nothing about whether the range was
+    acceptable, so treating it as a verdict on the request turns a network blip
+    into an unbounded retry storm.
+    """
+
+
 class Source(ABC):
     """A provider adapter.
 

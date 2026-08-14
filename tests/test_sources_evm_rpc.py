@@ -21,7 +21,12 @@ import pytest
 from rwa_liquidity.cache import ParquetCache
 from rwa_liquidity.schema.asset import AssetRef
 from rwa_liquidity.schema.types import ZERO_ADDRESS, TransferKind
-from rwa_liquidity.sources import Capability, EvmRpcSource, SourceFetchError
+from rwa_liquidity.sources import (
+    Capability,
+    EvmRpcSource,
+    SourceFetchError,
+    SourceTransportError,
+)
 from rwa_liquidity.sources.evm_rpc import TRANSFER_TOPIC
 
 ASSET = AssetRef.parse("ethereum:0x7712c34205737192402172409a8f7ccef8aa2aec")
@@ -99,7 +104,11 @@ class Node:
         symbol_encoding: str = "dynamic",
         log_limit: int | None = None,
         block_timestamps: dict[int, int] | None = None,
+        deployed_at: int = 0,
+        span_limit: int | None = None,
     ) -> None:
+        self.deployed_at = deployed_at
+        self.span_limit = span_limit
         self.logs = logs if logs is not None else []
         self.total_supply = total_supply
         self.symbol = symbol
@@ -123,6 +132,10 @@ class Node:
             return ok({"timestamp": hex(self.block_timestamps.get(number, INSIDE))})
         if method == "eth_call":
             return ok(self._call(params[0]["data"]))
+        if method == "eth_getCode":
+            # "0x" before the contract existed, bytecode from then on.
+            at = HEAD if params[1] == "latest" else int(params[1], 16)
+            return ok("0x60806040" if at >= self.deployed_at else "0x")
         if method == "eth_getLogs":
             return self._get_logs(params[0], body["id"])
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "error": "unknown"})
@@ -155,6 +168,20 @@ class Node:
     def _get_logs(self, query: dict[str, Any], request_id: int) -> httpx.Response:
         low, high = int(query["fromBlock"], 16), int(query["toBlock"], 16)
         selected = [e for e in self.logs if low <= int(e["blockNumber"], 16) <= high]
+        if self.span_limit is not None and high - low + 1 > self.span_limit:
+            # What public endpoints actually enforce: a cap on the block span,
+            # regardless of how many results the query would return.
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {
+                        "code": -32602,
+                        "message": f"range {high - low + 1} exceeds limit of {self.span_limit}",
+                    },
+                },
+            )
         if self.log_limit is not None and len(selected) > self.log_limit:
             # Real nodes reject rather than paginate, and say so in an error.
             return httpx.Response(
@@ -394,6 +421,148 @@ def test_an_over_budget_scan_stops_with_an_explanation(cache_root: Path) -> None
     node = Node(entries, total_supply=40.0)
     with pytest.raises(SourceFetchError, match="too active"):
         source(cache_root, node, max_logs=10).fetch_transfers(ASSET, start=START, end=END)
+
+
+def test_a_network_failure_does_not_split_the_range(cache_root: Path) -> None:
+    # The bug this guards against cost seven hours of wall clock. A dropped
+    # connection carries no verdict on the block span, but the splitter treated
+    # it as one, so every half was retried as two narrower queries that failed
+    # the same way and split again. The endpoint here answers everything except
+    # the log queries, so the scan reaches the splitter with a live connection
+    # to the node -- exactly the shape of the real incident, where the machine
+    # lost DNS part-way through a walk.
+    node = Node(
+        funded(log(sender=ALICE, recipient=BOB, amount=1.0, index=1)),
+        total_supply=1_000_000.0,
+    )
+    spans: list[tuple[int, int]] = []
+
+    def drop_log_queries(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_getLogs":
+            query = body["params"][0]
+            spans.append((int(query["fromBlock"], 16), int(query["toBlock"], 16)))
+            raise httpx.ConnectError("getaddrinfo failed", request=request)
+        return node.handle(request)
+
+    adapter = EvmRpcSource(
+        cache=ParquetCache(cache_root),
+        client=httpx.Client(transport=httpx.MockTransport(drop_log_queries)),
+        rpc_url="https://node.invalid",
+        min_interval=0.0,
+    )
+    with pytest.raises(SourceTransportError, match="getaddrinfo"):
+        adapter.fetch_transfers(ASSET, start=START, end=END)
+
+    # Repeats of one span are the retry budget doing its job. More than one
+    # *distinct* span means the range was subdivided, which is the fault: the
+    # node never said anything about the range, so there was nothing to react to.
+    assert len(set(spans)) == 1, f"a network fault was mistaken for a rejection: {set(spans)}"
+
+
+def test_the_request_budget_bounds_a_runaway_scan(cache_root: Path) -> None:
+    # A backstop for the whole class of fault rather than the one instance of
+    # it: whatever makes a scan split without converging, it stops being an
+    # unbounded wait and becomes an error naming the cause. A rejection that
+    # never resolves does terminate on its own once the span reaches one block,
+    # so the budget is set below that depth here to reach the guard at all.
+    node = Node(
+        [
+            log(sender=ZERO_ADDRESS, recipient=ALICE, amount=1.0, block=1_000 * (i + 1), index=i)
+            for i in range(40)
+        ],
+        total_supply=40.0,
+        # Reject every query: no span is ever small enough to satisfy the node.
+        log_limit=0,
+    )
+    with pytest.raises(SourceFetchError, match="eth_getLogs calls"):
+        source(cache_root, node, max_log_requests=5).fetch_transfers(ASSET, start=START, end=END)
+
+
+def test_a_span_capped_endpoint_costs_requests_proportional_to_the_token(
+    cache_root: Path,
+) -> None:
+    # The reason a scan of this registry took hours. Public endpoints cap a log
+    # query by block span, not by result count, so a walk from genesis costs one
+    # request per 10,000 blocks of *chain* -- thousands of them -- however
+    # inactive the token is. A token deployed near the tip should cost requests
+    # proportional to its own history, not to Ethereum's.
+    deployed = HEAD - 30_000
+    node = Node(
+        [log(sender=ZERO_ADDRESS, recipient=ALICE, amount=5.0, block=deployed + 10, index=0)],
+        total_supply=5.0,
+        deployed_at=deployed,
+        span_limit=10_000,
+    )
+    frame = source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
+
+    assert frame.height == 1
+    queries = sum(1 for method, _ in node.calls if method == "eth_getLogs")
+    # Genesis to head at 10,000 blocks a query would be over 2,500. The token's
+    # own 30,000 blocks are four windows, plus the span discovery.
+    assert queries < 30, f"{queries} log queries for a token 30,000 blocks old"
+
+
+def test_a_generous_endpoint_is_not_punished_for_it(cache_root: Path) -> None:
+    # The mirror of the test above: an endpoint with no span cap should answer
+    # the whole history in one query. A fixed window size would have issued
+    # thousands here, which is how the first attempt at this was caught.
+    node = Node(funded(), total_supply=1_000_000.0)
+    source(cache_root, node).fetch_transfers(ASSET, start=START, end=END)
+
+    assert sum(1 for method, _ in node.calls if method == "eth_getLogs") == 1
+
+
+def test_a_node_without_history_is_scanned_from_genesis(cache_root: Path) -> None:
+    # Deployment detection is an optimisation, and it fails safe: an endpoint
+    # that will not answer eth_getCode historically gets the slow, complete walk
+    # rather than a truncated one, because missing early blocks would silently
+    # drop the mints a reconstruction depends on.
+    node = Node(funded(), total_supply=1_000_000.0)
+
+    def refuse_get_code(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_getCode":
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "error": {"code": -32000, "message": "no"},
+                },
+            )
+        return node.handle(request)
+
+    adapter = EvmRpcSource(
+        cache=ParquetCache(cache_root),
+        client=httpx.Client(transport=httpx.MockTransport(refuse_get_code)),
+        rpc_url="https://node.invalid",
+        min_interval=0.0,
+    )
+    frame = adapter.fetch_holders(ASSET)
+
+    assert frame.height == 1
+    spans = [params[0] for method, params in node.calls if method == "eth_getLogs"]
+    assert int(spans[0]["fromBlock"], 16) == 0
+
+
+def test_the_request_budget_is_per_scan_not_per_source(cache_root: Path) -> None:
+    # One source object serves every asset in the registry, so a budget that
+    # accumulated across scans would fail the later assets for work the earlier
+    # ones did.
+    node = Node(funded(), total_supply=1_000_000.0)
+    adapter = source(cache_root, node)
+
+    adapter.fetch_transfers(ASSET, start=START, end=END)
+    # Reading the private counter is the point of the test: the reset is not
+    # observable any other way until a scan is long enough to exhaust a budget.
+    first = adapter._requests
+    adapter.fetch_transfers(ASSET, start=START, end=END, refresh=True)
+
+    # No larger than the first scan, so nothing accumulated. Smaller is expected
+    # rather than suspicious: the first scan pays to discover the endpoint's
+    # span limit and every scan after it reuses the answer.
+    assert 0 < adapter._requests <= first
 
 
 def test_a_persistent_rpc_error_is_reported(cache_root: Path) -> None:

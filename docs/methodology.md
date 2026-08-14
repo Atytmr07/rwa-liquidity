@@ -277,6 +277,17 @@ one.
 
 **Full-history reconstruction has a ceiling.** Past roughly 250,000 transfer logs the scan is refused rather than run against a free public endpoint, so actively traded tokens cannot be measured this way at all.
 
+**A scan gives up on a network fault rather than working around it.** A node
+that refuses a log query because it would return too many results is answered
+by halving the block range; a request that never reached the node is not. The
+difference matters because the two are indistinguishable from inside the
+adapter unless the transport says which happened, and treating a dropped
+connection as a verdict on the range subdivides it into two requests that fail
+the same way, then four. An asset whose scan hits a network fault is therefore
+reported as a failure and skipped, with the rest of the registry unaffected;
+because responses are cached individually as they arrive, re-running resumes
+from where it stopped rather than starting over.
+
 **Two of the five adapters have never run against their live APIs.** rwa.xyz and
 Dune were implemented against published documentation because no keys were
 available. Their tests prove they handle the documented shapes and nothing more.

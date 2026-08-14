@@ -42,7 +42,12 @@ import polars as pl
 from rwa_liquidity.schema.frames import AssetSnapshot, HolderBalance, TransferEvent
 from rwa_liquidity.schema.types import BURN_ADDRESSES
 from rwa_liquidity.schema.validation import polars_schema, validate
-from rwa_liquidity.sources.base import Capability, Source, SourceFetchError
+from rwa_liquidity.sources.base import (
+    Capability,
+    Source,
+    SourceFetchError,
+    SourceTransportError,
+)
 from rwa_liquidity.sources.classify import classify_transfers
 from rwa_liquidity.sources.http import CachedJSONClient
 
@@ -98,6 +103,24 @@ DEFAULT_MAX_LOGS: Final = 250_000
 
 #: Retries per request. Public endpoints return transient 502/504 under load.
 _RETRIES: Final = 3
+
+#: Blocks per log query, or `None` to discover it. Public endpoints cap a query
+#: by block span rather than by result count -- the default one answers "range N
+#: exceeds limit of 10000" -- and the cap differs by provider, so a fixed guess
+#: is either wasteful against a generous endpoint or wrong against a strict one.
+#: Discovery costs about a dozen requests once per process and adapts to both.
+DEFAULT_BLOCK_STEP: Final[int | None] = None
+
+#: Floor on the adaptive step. Below this a full-history scan is hopeless
+#: anyway, and shrinking further would turn one slow scan into a stuck one.
+_MIN_BLOCK_STEP: Final = 500
+
+#: Default ceiling on how many `eth_getLogs` calls one scan may issue. A walk
+#: from a token's deployment block in 10,000-block windows is in the hundreds,
+#: so this is a backstop against a fault rather than a limit real work meets:
+#: an earlier bug that split ranges for the wrong reason issued tens of
+#: thousands of requests over seven hours before it was stopped.
+DEFAULT_MAX_LOG_REQUESTS: Final = 20_000
 
 #: Minimum seconds between requests. A full-history scan issues its requests in
 #: a burst, which is exactly what trips a free endpoint's rate limiter; spacing
@@ -185,6 +208,16 @@ def _decode_uint(raw: str | None) -> int | None:
         return None
 
 
+def _has_code(raw: str | None) -> bool:
+    """Whether an `eth_getCode` result describes a deployed contract.
+
+    An address with no code answers `0x`, which is also what a node returns for
+    a block before the contract was deployed. That second reading is the useful
+    one here.
+    """
+    return bool(raw) and raw not in {"0x", "0x0"}
+
+
 def _sanitize(text: str) -> str | None:
     """Make a contract-supplied string safe to print and to put in a table.
 
@@ -248,6 +281,8 @@ class EvmRpcSource(Source):
         rpc_url: str | None = None,
         issuer_addresses: Mapping[str, Collection[str]] | None = None,
         max_logs: int = DEFAULT_MAX_LOGS,
+        max_log_requests: int = DEFAULT_MAX_LOG_REQUESTS,
+        block_step: int | None = DEFAULT_BLOCK_STEP,
         min_interval: float = DEFAULT_MIN_INTERVAL,
         ttl: timedelta | None = None,
     ) -> None:
@@ -261,6 +296,11 @@ class EvmRpcSource(Source):
             issuer_addresses: Per-asset treasury addresses whose transfers are
                 primary rather than secondary, keyed by asset uid.
             max_logs: Refuse a scan that would exceed this many logs.
+            max_log_requests: Refuse a scan that issues this many `eth_getLogs`
+                calls. A backstop against a range that splits without ever
+                converging, which is a bug rather than a large token.
+            block_step: Blocks per log query. `None` discovers what the endpoint
+                accepts; pass a number to skip the discovery.
             min_interval: Minimum seconds between requests, to stay under a free
                 endpoint's rate limit.
             ttl: Freshness window for cached responses. On-chain history is
@@ -271,11 +311,21 @@ class EvmRpcSource(Source):
         self._rpc_url = (rpc_url or optional_setting("EVM_RPC_URL") or DEFAULT_RPC_URL).rstrip("/")
         self._issuers = {uid.lower(): tuple(v) for uid, v in (issuer_addresses or {}).items()}
         self._max_logs = max_logs
+        self._max_log_requests = max_log_requests
+        #: Blocks per log query, learned on first use and kept for the rest of
+        #: the process: the cap is a property of the endpoint, so paying to
+        #: discover it once per source rather than once per asset is the point.
+        self._step = None if block_step is None else max(_MIN_BLOCK_STEP, block_step)
         self._min_interval = min_interval
         self._last_request = 0.0
         self._ttl = ttl
         self._http = CachedJSONClient(source=self.name, cache=cache, client=client)
         self._request_id = 0
+        #: eth_getLogs calls issued by the scan in progress. Reset per scan
+        #: rather than per instance: the CLI reuses one source across every
+        #: asset in the registry, and a running total would fail the later ones
+        #: for work the earlier ones did.
+        self._requests = 0
 
     # -- plumbing -----------------------------------------------------------
 
@@ -366,6 +416,128 @@ class EvmRpcSource(Source):
             raise SourceFetchError(f"{self.name}: eth_blockNumber returned {result!r}")
         return block
 
+    def _deployment_block(self, address: str, head: int, *, refresh: bool) -> int:
+        """Return the first block at which `address` holds code.
+
+        A token cannot have emitted a log before it existed, so everything below
+        this block is provably empty. Finding it costs about 25 `eth_getCode`
+        calls and saves thousands: these tokens were deployed well past block 18
+        million, so a walk from genesis spends most of its requests proving that
+        the early chain has nothing to say about a contract that did not exist.
+
+        Falls back to genesis if the endpoint cannot answer historically. That is
+        slow rather than wrong, which is the right way round -- and a node that
+        wrongly reported a contract as absent would be caught downstream, where
+        the reconstructed ledger is checked against the token's own supply.
+        """
+        try:
+            if _has_code(self._code(address, 0, refresh=refresh)):
+                return 0
+            if not _has_code(self._code(address, head, refresh=refresh)):
+                # No code even at the tip: nothing to scan, and a range starting
+                # at the head is the cheapest way to say so.
+                return head
+        except SourceFetchError:
+            logger.info(
+                "%s: %s does not serve historical eth_getCode; scanning from genesis",
+                self.name,
+                self._rpc_url,
+            )
+            return 0
+
+        low, high = 0, head
+        while low < high:
+            middle = (low + high) // 2
+            if _has_code(self._code(address, middle, refresh=refresh)):
+                high = middle
+            else:
+                low = middle + 1
+        return low
+
+    def _code(self, address: str, block: int, *, refresh: bool) -> str | None:
+        result = self._rpc(
+            "eth_getCode",
+            [address, hex(block)],
+            dataset="eth_getCode",
+            cache_key=f"{address}:{block}",
+            refresh=refresh,
+        )
+        return result if isinstance(result, str) else None
+
+    def _discover_step(self, address: str, low: int, high: int, *, refresh: bool) -> int:
+        """Find the widest block span this endpoint will answer in one query.
+
+        Asks for the whole range and halves until the answer stops being a
+        rejection. An endpoint with no span cap settles on the first request, so
+        nothing is paid for the generous case; a capped one costs about a dozen.
+
+        Deliberately optimistic to begin with. Starting from a conservative guess
+        would be safe but permanently slow against an endpoint that would have
+        served the lot, and there is no way to grow a guess that is too small --
+        an accepted query looks the same whether or not a wider one would also
+        have worked.
+        """
+        step = high - low + 1
+        while step > _MIN_BLOCK_STEP:
+            self._requests += 1
+            try:
+                self._rpc(
+                    "eth_getLogs",
+                    [
+                        {
+                            "address": address,
+                            "topics": [TRANSFER_TOPIC],
+                            "fromBlock": hex(low),
+                            "toBlock": hex(low + step - 1),
+                        }
+                    ],
+                    dataset="eth_getLogs",
+                    cache_key=f"{address}:{low}:{low + step - 1}",
+                    refresh=refresh,
+                )
+            except SourceTransportError:
+                raise
+            except SourceFetchError:
+                step //= 2
+            else:
+                return step
+        return _MIN_BLOCK_STEP
+
+    def _scan_logs(self, address: str, head: int, *, refresh: bool) -> list[dict[str, Any]]:
+        """Walk the complete Transfer history of `address` up to `head`.
+
+        The single entry point for a full scan, so the per-scan request budget
+        has exactly one place to be reset, and the five methods that need history
+        cannot drift apart in how they ask for it.
+
+        The walk steps through fixed, aligned windows rather than recursively
+        halving the whole chain. Public endpoints cap a log query by **block
+        span** -- 10,000 blocks on the default endpoint -- and not by how many
+        results it would return, so the request count of a top-down split is set
+        by the length of the chain rather than by how active the token is. That
+        is why a token with twelve logs in its entire history cost as many
+        requests as a busy one. Stepping in windows removes the split's interior
+        nodes, and aligning them to a multiple of the step keeps the cache keys
+        stable from run to run: only the final, partial window moves when the
+        chain advances.
+        """
+        self._requests = 0
+        collected: list[dict[str, Any]] = []
+        low = self._deployment_block(address, head, refresh=refresh)
+        if self._step is None:
+            self._step = self._discover_step(address, low, head, refresh=refresh)
+        low -= low % self._step
+        while low <= head:
+            # Read the step per window: a rejection shrinks it, and because it
+            # only ever halves, a `low` aligned to the old step stays aligned to
+            # the new one.
+            step = self._step
+            self._logs(
+                address, low, min(low + step - 1, head), collected=collected, refresh=refresh
+            )
+            low += step
+        return collected
+
     def _logs(
         self,
         address: str,
@@ -377,11 +549,28 @@ class EvmRpcSource(Source):
     ) -> None:
         """Fetch Transfer logs for `[low, high]`, splitting when the node balks.
 
-        Nodes cap results rather than paginating, and the cap differs between
-        providers. Rather than guessing a safe block span, the range is halved
-        whenever a query is rejected. That adapts to whatever the endpoint
-        allows and costs one wasted request per split.
+        `_scan_logs` sizes its windows to what the endpoint is believed to
+        accept; this handles the case where that belief is wrong. Rather than
+        guessing, a rejected range is halved and the step is shrunk to match, so
+        the discovery costs a few requests once rather than once per window.
+
+        Only a rejection splits. A request that never reached the node -- DNS
+        failure, dropped connection, a 5xx that outlived its retries -- carries
+        no verdict on the block span, and halving on one of those converts a
+        network outage into an exponential fan-out where every branch fails the
+        same way and splits again. That is not hypothetical: it took a scan of
+        this registry from minutes to over seven hours, silently, because the
+        failures looked identical to a range rejection from in here.
+        `SourceTransportError` is what makes them distinguishable.
         """
+        self._requests += 1
+        if self._requests > self._max_log_requests:
+            raise SourceFetchError(
+                f"{self.name}: the scan issued {self._requests:,} eth_getLogs calls, past "
+                f"the {self._max_log_requests:,} limit. A legitimate scan resolves in far "
+                f"fewer; this many means the range is being split for a reason other than "
+                f"the node capping results."
+            )
         self._check_budget(collected)
         try:
             result = self._rpc(
@@ -398,10 +587,21 @@ class EvmRpcSource(Source):
                 cache_key=f"{address}:{low}:{high}",
                 refresh=refresh,
             )
+        except SourceTransportError:
+            # The node never judged this request, so there is nothing to learn
+            # from it about the span. Let it out: the pipeline records a failure
+            # for this asset, and the cache means a re-run resumes rather than
+            # restarts.
+            raise
         except SourceFetchError:
             if low >= high:
                 raise
             middle = (low + high) // 2
+            # Remember what the endpoint would not take. Halving only, so a
+            # window aligned to the old step stays aligned to the new one.
+            accepted = (high - low + 1) // 2
+            settled = accepted if self._step is None else min(self._step, accepted)
+            self._step = max(_MIN_BLOCK_STEP, settled)
             self._logs(address, low, middle, collected=collected, refresh=refresh)
             self._logs(address, middle + 1, high, collected=collected, refresh=refresh)
             return
@@ -657,8 +857,7 @@ class EvmRpcSource(Source):
         facts = self._token_facts(asset, refresh=refresh, block=head)
         scale = 10 ** facts["decimals"]
 
-        collected: list[dict[str, Any]] = []
-        self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
+        collected = self._scan_logs(asset.address, head, refresh=refresh)
         records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
 
         schema = dict(polars_schema(TransferEvent))
@@ -710,8 +909,7 @@ class EvmRpcSource(Source):
         facts = self._token_facts(asset, refresh=refresh, block=head)
         scale = 10 ** facts["decimals"]
 
-        collected: list[dict[str, Any]] = []
-        self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
+        collected = self._scan_logs(asset.address, head, refresh=refresh)
         records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
 
         ledger: dict[str, int] = defaultdict(int)
@@ -829,8 +1027,7 @@ class EvmRpcSource(Source):
         facts = self._token_facts(asset, refresh=refresh, block=head)
         scale = 10 ** facts["decimals"]
 
-        collected: list[dict[str, Any]] = []
-        self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
+        collected = self._scan_logs(asset.address, head, refresh=refresh)
         records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
 
         wanted = sorted(set(instants))
@@ -908,8 +1105,7 @@ class EvmRpcSource(Source):
         facts = self._token_facts(asset, refresh=refresh, block=head)
         scale = 10 ** facts["decimals"]
 
-        collected: list[dict[str, Any]] = []
-        self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
+        collected = self._scan_logs(asset.address, head, refresh=refresh)
         records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
 
         # One pass over the ledger, emitting the running supply as each requested
@@ -980,8 +1176,7 @@ class EvmRpcSource(Source):
         facts = self._token_facts(asset, refresh=refresh, block=head)
         scale = 10 ** facts["decimals"]
 
-        collected: list[dict[str, Any]] = []
-        self._logs(asset.address, 0, head, collected=collected, refresh=refresh)
+        collected = self._scan_logs(asset.address, head, refresh=refresh)
         records = self._drop_implausible(self._decode_logs(collected, refresh=refresh), asset)
 
         received: dict[str, int] = defaultdict(int)

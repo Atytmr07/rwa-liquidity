@@ -17,6 +17,7 @@ from rwa_liquidity.sources.base import (
     Source,
     SourceError,
     SourceFetchError,
+    SourceTransportError,
     UnsupportedCapabilityError,
 )
 from rwa_liquidity.sources.classify import classify_transfers
@@ -58,6 +59,7 @@ __all__ = [
     "Source",
     "SourceError",
     "SourceFetchError",
+    "SourceTransportError",
     "UnsupportedCapabilityError",
     "classify_transfers",
     "load_defillama_registry",

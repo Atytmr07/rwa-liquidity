@@ -27,7 +27,7 @@ import httpx
 import polars as pl
 
 from rwa_liquidity.cache.store import CacheKey, ParquetCache
-from rwa_liquidity.sources.base import SourceFetchError
+from rwa_liquidity.sources.base import SourceFetchError, SourceTransportError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -200,7 +200,9 @@ class CachedJSONClient:
         try:
             response = self._client.get(url, params=dict(params) if params else None)
         except httpx.HTTPError as error:
-            raise SourceFetchError(f"{self.source}: request to {url} failed: {error}") from error
+            raise SourceTransportError(
+                f"{self.source}: request to {url} failed: {error}"
+            ) from error
 
         if response.is_error:
             raise SourceFetchError(
@@ -273,6 +275,11 @@ class CachedJSONClient:
 
         retrieved_at = datetime.now(UTC)
         last_error = ""
+        # Whether the endpoint ever rendered a verdict on this request. A
+        # connection that never landed, a 429, and a 5xx all leave the request
+        # unjudged, which callers that reformulate a rejected request need to
+        # tell apart from an actual rejection.
+        unreachable = True
         for attempt in range(retries + 1):
             pause = _RETRY_PAUSE
             try:
@@ -303,7 +310,9 @@ class CachedJSONClient:
                     pause = _THROTTLE_PAUSE
                 elif response.status_code < _SERVER_ERROR:
                     # Any other 4xx means the request itself is wrong. Retrying
-                    # it wastes another call and cannot succeed.
+                    # it wastes another call and cannot succeed. This is the one
+                    # branch where the endpoint has actually judged the request.
+                    unreachable = False
                     break
             if attempt < retries:
                 # Linear rather than exponential: these endpoints recover in
@@ -311,7 +320,8 @@ class CachedJSONClient:
                 # issues thousands of requests.
                 time.sleep(pause * (attempt + 1))
 
-        raise SourceFetchError(f"{self.source}: {url} {last_error}")
+        error_type = SourceTransportError if unreachable else SourceFetchError
+        raise error_type(f"{self.source}: {url} {last_error}")
 
     def _key(
         self,
