@@ -277,6 +277,16 @@ one.
 
 **Full-history reconstruction has a ceiling.** Past roughly 250,000 transfer logs the scan is refused rather than run against a free public endpoint, so actively traded tokens cannot be measured this way at all.
 
+**The free endpoint rate-limits sustained scanning, and a full-history walk is
+sustained scanning.** A cold scan of the whole registry is roughly 6,000 log
+queries, and the endpoint answers a few hundred of those before replying "service
+temporarily unavailable" for a while. The adapter waits and retries, then reports
+the asset as unfetched rather than pressing; every window already retrieved stays
+cached, so resuming later costs only what is left. This is a property of free
+infrastructure rather than of the method: `EVM_RPC_URL` points the adapter at an
+endpoint with more headroom, at the cost of the no-credentials property that
+makes the published findings reproducible by a stranger.
+
 **A scan gives up on a network fault rather than working around it.** A node
 that refuses a log query because it would return too many results is answered
 by halving the block range; a request that never reached the node is not. The

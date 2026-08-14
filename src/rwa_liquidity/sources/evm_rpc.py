@@ -120,6 +120,13 @@ _MIN_BLOCK_STEP: Final = 500
 #: about the request. The endpoint returns it when overloaded.
 _JSONRPC_INTERNAL_ERROR: Final = -32603
 
+#: Attempts to make when the node reports itself overloaded, and the base pause
+#: between them in seconds. Longer than the transport's retry pause because this
+#: is a node asking for room rather than a request that happened to fail: a scan
+#: issuing hundreds of queries is the reason it needs the room.
+_OVERLOAD_RETRIES: Final = 4
+_OVERLOAD_PAUSE: Final = 3.0
+
 #: How a node states its own block-span limit, as in "range 24999999 exceeds
 #: limit of 10000". Not every endpoint says so, hence the fallback search, but
 #: the ones that do give an exact answer for one request.
@@ -353,45 +360,68 @@ class EvmRpcSource(Source):
         Raises:
             SourceFetchError: On transport failure or a JSON-RPC error object.
         """
-        self._request_id += 1
-        # Pace only real calls: a cache hit costs the endpoint nothing, and
-        # sleeping before one would make a cached run needlessly slow.
-        elapsed = time.monotonic() - self._last_request
-        if self._last_request and elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
-        self._last_request = time.monotonic()
-        response = self._http.post_json(
-            self._rpc_url,
-            dataset=dataset,
-            body={
-                "jsonrpc": "2.0",
-                "id": self._request_id,
-                "method": method,
-                "params": list(params),
-            },
-            cache_params={"call": cache_key},
-            ttl=self._ttl,
-            refresh=refresh,
-            retries=_RETRIES,
-        )
-        payload = response.payload
-        if not isinstance(payload, dict):
-            raise SourceFetchError(f"{self.name}: {method} did not return a JSON object")
-        if "error" in payload:
+        for attempt in range(_OVERLOAD_RETRIES + 1):
+            self._request_id += 1
+            # Pace only real calls: a cache hit costs the endpoint nothing, and
+            # sleeping before one would make a cached run needlessly slow.
+            elapsed = time.monotonic() - self._last_request
+            if self._last_request and elapsed < self._min_interval:
+                time.sleep(self._min_interval - elapsed)
+            self._last_request = time.monotonic()
+            response = self._http.post_json(
+                self._rpc_url,
+                dataset=dataset,
+                body={
+                    "jsonrpc": "2.0",
+                    "id": self._request_id,
+                    "method": method,
+                    "params": list(params),
+                },
+                cache_params={"call": cache_key},
+                ttl=self._ttl,
+                refresh=refresh,
+                retries=_RETRIES,
+            )
+            payload = response.payload
+            if not isinstance(payload, dict):
+                raise SourceFetchError(f"{self.name}: {method} did not return a JSON object")
+            if "error" not in payload:
+                return payload.get("result")
+
             error = payload["error"]
             code = error.get("code") if isinstance(error, dict) else None
-            if code == _JSONRPC_INTERNAL_ERROR:
-                # JSON-RPC defines -32603 as a fault inside the server, so it is
-                # a report about the node rather than a verdict on the request.
-                # The endpoint returns it as "service temporarily unavailable"
-                # when it is overloaded, over HTTP 200, which made it look like
-                # any other refusal -- and the log scanner answers a refusal by
-                # splitting the range in two. Both halves then arrive at a node
-                # that is already struggling, get the same answer, and split
-                # again. The scan drives the overload it is reacting to.
-                raise SourceTransportError(f"{self.name}: {method} unavailable: {error}")
-            raise SourceFetchError(f"{self.name}: {method} failed: {error}")
-        return payload.get("result")
+            if code != _JSONRPC_INTERNAL_ERROR:
+                raise SourceFetchError(f"{self.name}: {method} failed: {error}")
+
+            # JSON-RPC defines -32603 as a fault inside the server, so it is a
+            # report about the node rather than a verdict on the request. This
+            # endpoint uses it to throttle, over HTTP 200, which puts it out of
+            # reach of the transport's own retry budget -- that only sees status
+            # codes, and this arrives as a success. Backing off and asking again
+            # is what a 429 would have got.
+            if attempt < _OVERLOAD_RETRIES:
+                logger.info(
+                    "%s: %s is throttling; waiting %.0fs",
+                    self.name,
+                    self._rpc_url,
+                    _OVERLOAD_PAUSE * (attempt + 1),
+                )
+                time.sleep(_OVERLOAD_PAUSE * (attempt + 1))
+                continue
+
+            # Out of patience. Raised as a transport failure so the log scanner
+            # lets it out rather than splitting the range: a node that is
+            # struggling answers two narrower queries no more happily than one,
+            # and the scan would drive the overload it is reacting to.
+            raise SourceTransportError(
+                f"{self.name}: {self._rpc_url} is refusing {method} as "
+                f"unavailable after {_OVERLOAD_RETRIES} attempts ({error}). A free "
+                f"endpoint rate-limits sustained scanning, and a full-history walk "
+                f"is sustained scanning; this usually clears after a pause. To scan "
+                f"now, point EVM_RPC_URL at an endpoint with more headroom."
+            )
+
+        raise SourceTransportError(f"{self.name}: {method} exhausted its retries")
 
     def _call(
         self, address: str, selector: str, *, block: int | None = None, refresh: bool = False

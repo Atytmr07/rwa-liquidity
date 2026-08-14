@@ -26,6 +26,7 @@ from rwa_liquidity.sources import (
     EvmRpcSource,
     SourceFetchError,
     SourceTransportError,
+    evm_rpc,
 )
 from rwa_liquidity.sources.evm_rpc import _MIN_BLOCK_STEP, TRANSFER_TOPIC
 
@@ -547,9 +548,50 @@ def test_a_dense_stretch_does_not_shrink_the_window_for_everything_after_it(
     assert len(spans) < 60, f"{len(spans)} queries for a token 100,000 blocks old"
 
 
-def test_an_overloaded_node_is_not_answered_by_splitting_the_range(
-    cache_root: Path,
+def test_throttling_is_waited_out_rather_than_fatal(
+    cache_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # The pause is real seconds against a real endpoint and nothing against a
+    # mock, which has no load to relieve.
+    monkeypatch.setattr(evm_rpc, "_OVERLOAD_PAUSE", 0.0)
+    # The endpoint throttles with -32603 over HTTP 200, which the transport's own
+    # retry budget never sees: it inspects status codes, and this arrives as a
+    # success. Without a retry here a scan that is momentarily asked to slow down
+    # loses the whole asset.
+    node = Node(funded(), total_supply=1_000_000.0)
+    refusals = 2
+
+    def throttle_then_serve(request: httpx.Request) -> httpx.Response:
+        nonlocal refusals
+        body = json.loads(request.content)
+        if body["method"] == "eth_getLogs" and refusals > 0:
+            refusals -= 1
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "error": {"code": -32603, "message": "service temporarily unavailable"},
+                },
+            )
+        return node.handle(request)
+
+    adapter = EvmRpcSource(
+        cache=ParquetCache(cache_root),
+        client=httpx.Client(transport=httpx.MockTransport(throttle_then_serve)),
+        rpc_url="https://node.invalid",
+        min_interval=0.0,
+    )
+    frame = adapter.fetch_transfers(ASSET, start=START, end=END)
+
+    assert frame.height == 1
+    assert refusals == 0
+
+
+def test_an_overloaded_node_is_not_answered_by_splitting_the_range(
+    cache_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(evm_rpc, "_OVERLOAD_PAUSE", 0.0)
     # The endpoint returns {"code": -32603, "message": "service temporarily
     # unavailable"} over HTTP 200 when it is struggling. Read as a refusal of the
     # range, that makes the scanner split and send two queries where it sent one,

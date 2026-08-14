@@ -53,11 +53,16 @@ uv run rwa-liquidity report
 ```
 
 That measures real assets on-chain by replaying each token's full transfer
-history. **The first run takes about two hours** for the whole registry, and is
-cached afterwards so later runs are near-instant. The cost is one request per
-10,000 blocks of a token's life -- 641 of them for BUIDL -- and the free endpoint
-answers each in roughly a second, serially. To see real output sooner, measure
-one asset, or use `--demo` below.
+history: one request per 10,000 blocks of a token's life, 641 of them for BUIDL,
+about 6,000 for the registry. Every window is cached as it arrives, so the cost
+is paid once and later runs are near-instant.
+
+**Expect to run it more than once.** The free endpoint rate-limits sustained
+scanning and starts answering "service temporarily unavailable" partway through;
+the adapter waits, retries, then reports the assets it could not reach rather
+than hammering. Run it again later and it resumes from the cache. Setting
+`EVM_RPC_URL` to an endpoint with more headroom avoids this, at the cost of the
+no-credentials property. To see real output immediately, use `--demo` below.
 
 For an instant run against the committed sample dataset:
 

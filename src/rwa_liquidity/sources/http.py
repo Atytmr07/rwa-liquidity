@@ -289,17 +289,25 @@ class CachedJSONClient:
             else:
                 if not response.is_error:
                     payload = self._decode(response.text, url)
-                    self.cache.put(
-                        key,
-                        pl.DataFrame(
-                            {
-                                _URL_COLUMN: [str(response.url)],
-                                _STATUS_COLUMN: [response.status_code],
-                                _RESPONSE_COLUMN: [response.text],
-                            }
-                        ),
-                        retrieved_at=retrieved_at,
-                    )
+                    # A JSON-RPC fault arrives as HTTP 200 with an `error`
+                    # member, so "the transport succeeded" is not the same as
+                    # "there is an answer here worth keeping". Storing one turns
+                    # a momentary refusal into a permanent one: the endpoint
+                    # throttles with "service temporarily unavailable", and a
+                    # cached copy of that is replayed on every later run, so the
+                    # block range it belongs to can never be fetched again.
+                    if not (isinstance(payload, dict) and "error" in payload):
+                        self.cache.put(
+                            key,
+                            pl.DataFrame(
+                                {
+                                    _URL_COLUMN: [str(response.url)],
+                                    _STATUS_COLUMN: [response.status_code],
+                                    _RESPONSE_COLUMN: [response.text],
+                                }
+                            ),
+                            retrieved_at=retrieved_at,
+                        )
                     return JSONResponse(
                         payload=payload, retrieved_at=retrieved_at, from_cache=False
                     )
