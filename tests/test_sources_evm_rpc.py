@@ -547,6 +547,45 @@ def test_a_dense_stretch_does_not_shrink_the_window_for_everything_after_it(
     assert len(spans) < 60, f"{len(spans)} queries for a token 100,000 blocks old"
 
 
+def test_an_overloaded_node_is_not_answered_by_splitting_the_range(
+    cache_root: Path,
+) -> None:
+    # The endpoint returns {"code": -32603, "message": "service temporarily
+    # unavailable"} over HTTP 200 when it is struggling. Read as a refusal of the
+    # range, that makes the scanner split and send two queries where it sent one,
+    # to a node that is already overloaded -- so the scan feeds the condition it
+    # is reacting to. JSON-RPC defines -32603 as a fault in the server, which is
+    # exactly the distinction needed.
+    node = Node(funded(), total_supply=1_000_000.0)
+    seen: list[tuple[int, int]] = []
+
+    def overloaded(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_getLogs":
+            query = body["params"][0]
+            seen.append((int(query["fromBlock"], 16), int(query["toBlock"], 16)))
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "error": {"code": -32603, "message": "service temporarily unavailable"},
+                },
+            )
+        return node.handle(request)
+
+    adapter = EvmRpcSource(
+        cache=ParquetCache(cache_root),
+        client=httpx.Client(transport=httpx.MockTransport(overloaded)),
+        rpc_url="https://node.invalid",
+        min_interval=0.0,
+    )
+    with pytest.raises(SourceTransportError, match="unavailable"):
+        adapter.fetch_transfers(ASSET, start=START, end=END)
+
+    assert len(set(seen)) == 1, f"an overloaded node was answered by splitting: {set(seen)}"
+
+
 def test_the_span_limit_is_read_from_the_node_rather_than_searched_for(
     cache_root: Path,
 ) -> None:

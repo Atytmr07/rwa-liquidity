@@ -14,6 +14,43 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-08-14 -- An overloaded node reports a fault, not a verdict
+
+**Decided:** JSON-RPC error `-32603` raises `SourceTransportError`. Batching was
+evaluated and rejected. The default endpoint stands, because the alternatives
+still do not serve keyless archive log queries.
+
+**Alternatives:** batch 10--20 calls per HTTP request; move to another public
+endpoint; treat every JSON-RPC error alike, as before.
+
+**Why:** the endpoint answers `{"code": -32603, "message": "service temporarily
+unavailable"}` over HTTP 200 when it is struggling. Read as a refusal of the
+range -- which is what every JSON-RPC error looked like -- the scanner splits and
+sends two queries where it sent one, to a node already overloaded, and each half
+gets the same answer and splits again. The scan drives the overload it is
+reacting to. JSON-RPC defines -32603 as a fault inside the server rather than a
+complaint about the request, which is the distinction, and it is the third and
+last place this same conflation was hiding.
+
+Batching was measured before being written: the endpoint accepts a JSON-RPC
+array and answers it correctly, but ten calls in one request took 10.3 seconds
+against 1.38 seconds each, so it processes them serially. A quarter off a
+two-hour run does not pay for a change to how the cache attributes per-call
+failures, which is precisely where this session's mistakes have been living.
+
+Nine public endpoints were re-checked for keyless `eth_getLogs` over a historical
+range. None serve it: publicnode and 1rpc require archive access, Cloudflare and
+dRPC refuse the query shape, merkle does not implement the method. The finding
+that put the current endpoint in this file has not aged.
+
+What is left is that the endpoint answers a log query in about a second and does
+so serially, so a first full-registry scan is on the order of two hours. That is
+a property of free infrastructure rather than of this code, it is paid once
+because every window is cached, and it is now documented rather than discovered
+by waiting.
+
+---
+
 ## 2026-08-14 -- The window size is read from the node, not inferred from failures
 
 **Decided:** `_discover_step` asks for the whole chain once and reads the limit

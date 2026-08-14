@@ -116,6 +116,10 @@ DEFAULT_BLOCK_STEP: Final[int | None] = None
 #: anyway, and shrinking further would turn one slow scan into a stuck one.
 _MIN_BLOCK_STEP: Final = 500
 
+#: JSON-RPC's code for a fault inside the server, as opposed to a complaint
+#: about the request. The endpoint returns it when overloaded.
+_JSONRPC_INTERNAL_ERROR: Final = -32603
+
 #: How a node states its own block-span limit, as in "range 24999999 exceeds
 #: limit of 10000". Not every endpoint says so, hence the fallback search, but
 #: the ones that do give an exact answer for one request.
@@ -374,7 +378,19 @@ class EvmRpcSource(Source):
         if not isinstance(payload, dict):
             raise SourceFetchError(f"{self.name}: {method} did not return a JSON object")
         if "error" in payload:
-            raise SourceFetchError(f"{self.name}: {method} failed: {payload['error']}")
+            error = payload["error"]
+            code = error.get("code") if isinstance(error, dict) else None
+            if code == _JSONRPC_INTERNAL_ERROR:
+                # JSON-RPC defines -32603 as a fault inside the server, so it is
+                # a report about the node rather than a verdict on the request.
+                # The endpoint returns it as "service temporarily unavailable"
+                # when it is overloaded, over HTTP 200, which made it look like
+                # any other refusal -- and the log scanner answers a refusal by
+                # splitting the range in two. Both halves then arrive at a node
+                # that is already struggling, get the same answer, and split
+                # again. The scan drives the overload it is reacting to.
+                raise SourceTransportError(f"{self.name}: {method} unavailable: {error}")
+            raise SourceFetchError(f"{self.name}: {method} failed: {error}")
         return payload.get("result")
 
     def _call(

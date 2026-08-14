@@ -53,9 +53,13 @@ uv run rwa-liquidity report
 ```
 
 That measures real assets on-chain by replaying each token's full transfer
-history. The first run takes **on the order of an hour** for the whole registry
-and is cached afterwards, so later runs are near-instant; a single asset is a
-minute or two. For an instant run against the committed sample dataset:
+history. **The first run takes about two hours** for the whole registry, and is
+cached afterwards so later runs are near-instant. The cost is one request per
+10,000 blocks of a token's life -- 641 of them for BUIDL -- and the free endpoint
+answers each in roughly a second, serially. To see real output sooner, measure
+one asset, or use `--demo` below.
+
+For an instant run against the committed sample dataset:
 
 ```bash
 uv run rwa-liquidity report --demo
