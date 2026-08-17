@@ -45,14 +45,27 @@ jobs:
         run: uv run mypy
 
   test:
-    name: tests (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: tests (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # The floor and the ceiling of the supported range. Testing every minor
-        # in between buys little and triples the CI bill.
-        python-version: ["3.11", "3.13"]
+        # The floor and the ceiling of the supported range on Linux, plus the
+        # floor on Windows. Not a full OS x version cross product -- that
+        # doubles every job for coverage this project doesn't need, since the
+        # risk a second OS actually catches is platform-specific dependency
+        # resolution (see the 2026-08-15 tzdata entry in DECISIONS.md: a
+        # dependency that arrived only as a side effect of an extra, invisible
+        # on Linux because the OS supplies what it was standing in for), not
+        # interpreter-version behaviour. One Windows job catches that class of
+        # bug; a second one on 3.13 would not catch a different class of it.
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.11"
     steps:
       - uses: actions/checkout@v4
 
