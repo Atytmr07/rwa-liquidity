@@ -14,6 +14,39 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-08-15 -- `tzdata` is a base dependency, not an accident of `pandas`
+
+**Decided:** `tzdata; sys_platform == "win32" or sys_platform == "emscripten"` is a
+direct dependency in `pyproject.toml`, not left to arrive transitively through
+the optional `pandas` extra.
+
+**Alternatives:** leave it as-is; document "run `uv sync --all-extras`" as a
+requirement even for users who never touch pandas.
+
+**Why:** every timestamp in this package is timezone-aware UTC, and polars
+resolves `"UTC"` through Python's `zoneinfo` when building a row or dict from a
+`Datetime` column. Windows has no system IANA timezone database for `zoneinfo`
+to fall back on, so without the `tzdata` package this panics inside polars with
+`ZoneInfoNotFoundError` -- and it panics on `report --demo`, the first command
+in the README's two-command quickstart. A plain `uv sync` on Windows failed the
+package's own headline promise.
+
+This was invisible for the entire build. `pandas` is an optional extra and
+happens to depend on `tzdata` too, so any environment that ever ran
+`uv sync --all-extras` -- every dev environment, by the README's own
+instructions -- got it as a side effect and never saw the gap. CI never saw it
+either: both jobs run on `ubuntu-latest`, which has a native tzdata database and
+needs the package for nothing, and always installs with `--all-extras` regardless.
+Two independent reasons for the gap, and neither is a Windows-CI job away from
+mattering to a plain `uv sync` on Windows, which is exactly what surfaced it: an
+environment recreated today happened to run a bare `uv sync`.
+
+Confirmed by rebuilding the venv from scratch with a plain `uv sync` (no extras)
+and running `report --demo`: it panicked before the fix and completed after,
+with `tzdata` now installed regardless of which extras are requested.
+
+---
+
 ## 2026-08-14 -- An overloaded node reports a fault, not a verdict
 
 **Decided:** JSON-RPC error `-32603` raises `SourceTransportError`. Batching was

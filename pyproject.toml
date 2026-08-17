@@ -37,6 +37,15 @@ dependencies = [
     # reader, but pyarrow is required for the round-trip guarantees we rely on
     # (stable schema metadata) and for the pandas export path.
     "pyarrow>=18.0",
+    # Every timestamp in this package is timezone-aware UTC (see
+    # docs/methodology.md SS4), and polars resolves "UTC" through Python's
+    # zoneinfo when building a row or dict from a Datetime column. Windows and
+    # WASM have no system IANA database for zoneinfo to fall back on, so without
+    # this the very first command in the README -- `report --demo` -- panics
+    # inside polars with ZoneInfoNotFoundError. It was invisible in development
+    # only because pandas, an optional extra, happens to need it too and pulled
+    # it in as a side effect.
+    "tzdata>=2024.1; sys_platform == 'win32' or sys_platform == 'emscripten'",
 ]
 
 [project.optional-dependencies]
