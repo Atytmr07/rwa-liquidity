@@ -173,7 +173,11 @@ def _collect_live(
     assets = [entry.ref for entry in load_defillama_registry()]
     console.print(
         f"Measuring [bold]{len(assets)}[/bold] assets against a public Ethereum node. "
-        f"The first run replays each token's full transfer history; later runs are cached."
+        f"The first run replays each token's full transfer history -- a cold run of the "
+        f"whole registry can take a while, and every window is cached as it arrives, so "
+        f"re-running after an interruption resumes rather than restarts. See "
+        f"[bold]--demo[/bold] for an instant run, or docs/methodology.md for why this "
+        f"one is slow."
     )
 
     sources: list[Source] = [EvmRpcSource(), DeFiLlamaPricesSource()]

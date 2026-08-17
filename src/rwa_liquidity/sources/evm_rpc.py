@@ -10,11 +10,15 @@ metrics only on constructed data. Public Ethereum RPC endpoints serve
 made directly against the chain.
 
 **Why it is tractable.** Reconstructing holder balances means replaying a token's
-entire `Transfer` history from deployment, which sounds prohibitive. It is not,
-for exactly the assets this package studies: tokenized funds are thin. BUIDL's
-complete history is about 15,000 logs, fetched in nine requests and a few
-seconds. A liquid retail token would be hopeless here; a tokenized treasury fund
-is not.
+entire `Transfer` history from deployment, which sounds prohibitive. It is not
+hopeless, for exactly the assets this package studies: tokenized funds are thin.
+BUIDL's complete history is about 15,000 logs, but reaching them costs one
+request per 10,000-block window from deployment to the chain tip regardless of
+how few of those blocks hold a transfer -- 641 requests for BUIDL, a few tens of
+minutes against a free endpoint answering serially. A liquid retail token would
+be hopeless here; a tokenized treasury fund is slow rather than impossible. See
+`docs/methodology.md` for the measured cost of a cold scan and what a loaded
+endpoint does to it.
 
 **Why it is trustworthy.** After replaying the ledger, the reconstructed balances
 are summed and compared against the contract's own `totalSupply()`. If the two
@@ -609,11 +613,8 @@ class EvmRpcSource(Source):
         if self._step is None:
             self._step = self._discover_step(head, refresh=refresh)
         low -= low % self._step
+        step = self._step
         while low <= head:
-            # Read the step per window: a rejection shrinks it, and because it
-            # only ever halves, a `low` aligned to the old step stays aligned to
-            # the new one.
-            step = self._step
             self._logs(
                 address, low, min(low + step - 1, head), collected=collected, refresh=refresh
             )
