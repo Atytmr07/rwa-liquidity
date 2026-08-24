@@ -431,7 +431,18 @@ def resolve_total_supply(
                 f"concentration downward, so the true value is higher than reported"
             )
 
-    if observed > total:
+    if observed > total * SHARE_CEILING:
+        # The same tolerance `SHARE_CEILING` applies to a share of 1.0, applied
+        # here to the sum itself: float64 summation over hundreds of balances
+        # does not reproduce `total_supply` bit-for-bit even when the ledger
+        # reconstruction is exact, and the gap moves with the order logs were
+        # collected in -- window size, chunking, retries -- none of which bear
+        # on correctness. Measured on real holder sets: sums of 3e4 and 1e5
+        # differed from their reported supply by 1.46e-11, fourteen orders of
+        # magnitude below the reported total. A strict `>` flagged both as
+        # "inconsistent" and would flag every future run the same way, which is
+        # the wrong kind of false positive for a package whose central claim is
+        # that a mismatch here means something real.
         warnings.append(
             f"observed balances sum to {observed:,.4g}, which exceeds the reported "
             f"total_supply of {total:,.4g}; the two figures are inconsistent"

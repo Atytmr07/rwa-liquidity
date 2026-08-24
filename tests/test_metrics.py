@@ -428,6 +428,24 @@ def test_burn_address_holdings_are_excluded() -> None:
     assert any("burn address" in note for note in result.provenance.exclusions)
 
 
+def test_float_summation_noise_does_not_flag_the_supply_as_inconsistent() -> None:
+    # Measured on a real on-chain reconstruction: a ledger replay's balances
+    # summed to 30837.417783566347 against a totalSupply() of
+    # 30837.417783566332, a difference of 1.46e-11 -- float64 summation order,
+    # not a wrong reconstruction. A strict `observed > total` flagged it anyway.
+    noisy = [(A, 500.0 + 4e-11), (B, 250.0), (C, 150.0), (D, 60.0), (E, 40.0)]
+    result = holder_hhi(holders_frame(noisy), snapshot_frame(), window=WINDOW)
+    assert not any("inconsistent" in warning for warning in result.provenance.warnings)
+
+
+def test_a_real_supply_mismatch_is_still_flagged() -> None:
+    # The tolerance above must not swallow a genuine mismatch, which is what
+    # caught USDM's rebasing balances in the published findings.
+    overshoot = [(A, 900.0), (B, 250.0), (C, 150.0), (D, 60.0), (E, 40.0)]
+    result = holder_hhi(holders_frame(overshoot), snapshot_frame(), window=WINDOW)
+    assert any("inconsistent" in warning for warning in result.provenance.warnings)
+
+
 def test_truncated_holder_list_is_flagged_as_biased_downward() -> None:
     # Two of a reported 5000 holders. HHI computed from that is meaningless
     # without the caveat, so the caveat has to be attached to the value.
