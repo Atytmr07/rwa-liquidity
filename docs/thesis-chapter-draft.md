@@ -42,8 +42,8 @@ issuance convention.
 Real-world asset (RWA) tokenization — representing claims on Treasury bills,
 private credit, commodities, and other traditional instruments as tokens on a
 public blockchain — has grown from a marginal experiment to a market
-institutions now analyze directly (Li, 2025; Bank for International
-Settlements, 2026). The stated case for tokenization rests substantially on a
+institutions now analyze directly (Li, 2025; Aquilina et al., 2025). The
+stated case for tokenization rests substantially on a
 liquidity argument: that moving an asset onto a continuously operating,
 programmable settlement layer makes it easier to buy, sell, and price. That
 argument is testable, and it has rarely been tested directly against
