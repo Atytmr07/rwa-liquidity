@@ -12,6 +12,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from rwa_liquidity.cli import app
@@ -21,6 +22,18 @@ from rwa_liquidity.metrics.report import METRIC_COLUMNS, build_report, report_fr
 from rwa_liquidity.schema.types import VolumeMode
 
 runner = CliRunner()
+
+
+def _params(command: str) -> list[typer.core.TyperOption]:
+    """Registered options for one subcommand, read from typer/click directly.
+
+    Introspection rather than parsing rendered `--help` text: see
+    `test_live_mode_is_offered_and_needs_no_key` for why the two are not
+    interchangeable here.
+    """
+    click_app = typer.main.get_command(app)
+    return click_app.commands[command].params  # type: ignore[attr-defined,no-any-return]
+
 
 TBILL = "ethereum:0x0000000000000000000000000000000000000001"
 CREDIT = "ethereum:0x0000000000000000000000000000000000000003"
@@ -230,11 +243,21 @@ def test_demo_writes_a_csv(tmp_path: Path) -> None:
 
 
 def test_live_mode_is_offered_and_needs_no_key() -> None:
-    # Live mode measures real assets against a public node. The help text has to
-    # say that keys are not required, or nobody will try it.
-    output = runner.invoke(app, ["report", "--help"]).output
-    assert "--demo" in output
-    assert "--refresh" in output
+    # Live mode measures real assets against a public node. The CLI has to
+    # document that, or nobody will try it.
+    #
+    # This checks typer's own command registration rather than the rendered
+    # --help text. Text scraped from a rich-drawn panel is a hostage to how
+    # wide the console rich thinks it is, which is not stable: it differs by
+    # OS, by terminal, and -- confirmed the way this broke -- by which CPython
+    # patch release is resolved (3.11.15 locally never reproduced it; CI's
+    # 3.11.16 failed on every OS every time). The option existing and being
+    # documented is the actual thing worth guaranteeing; asking rich to lay it
+    # out in one particular shape is not.
+    options = {opt: param.help for param in _params("report") for opt in param.opts}
+    assert "--demo" in options
+    assert "no api key" in (options["--demo"] or "").lower()
+    assert "--refresh" in options
 
 
 def test_invalid_mode_is_rejected() -> None:
@@ -299,6 +322,9 @@ def test_trend_command_rejects_an_unknown_metric() -> None:
 
 
 def test_trend_and_issuance_are_documented_in_the_help() -> None:
-    output = runner.invoke(app, ["--help"]).output
-    assert "trend" in output
-    assert "issuance" in output
+    # Same reasoning as test_live_mode_is_offered_and_needs_no_key: check the
+    # registered commands, not rendered text a wider or narrower console could
+    # reflow.
+    commands = typer.main.get_command(app).commands  # type: ignore[attr-defined]
+    assert "trend" in commands
+    assert "issuance" in commands

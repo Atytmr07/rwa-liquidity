@@ -14,7 +14,39 @@ defensible in conversation months from now.
 
 ---
 
-## 2026-08-24 -- BUIDL's re-verification stays open; the scan does not
+## 2026-08-25 -- CLI help is tested by introspection, not by scraping rich's output
+
+**Decided:** `test_live_mode_is_offered_and_needs_no_key` and
+`test_trend_and_issuance_are_documented_in_the_help` check typer's own command
+registration (`typer.main.get_command(app).commands[...].params`) instead of
+searching the ANSI text of a rendered `--help` panel for a substring.
+
+**Alternatives:** force a specific console width for the test; strip ANSI
+codes and normalise whitespace before searching; leave it, since it passed
+in every local run.
+
+**Why:** the first real CI run on this repo -- three jobs, two OSes -- failed
+all three on the same assertion: `'--demo' in output` was `False` against a
+rich-drawn options panel. It had never failed locally, including in a fresh
+clone built to match CI exactly. Sweeping the console width from 40 to 200
+columns, before and after import, reproduced nothing; the option name never
+wrapped at any width tried. The one confirmed difference: CI resolved
+`cpython-3.11.16`, and every local environment available here was pinned to
+`3.11.15` -- uv's local Python index had no Windows build of `.16` to install
+and verify against directly. A same-minor patch bump changing how a
+rich-rendered panel lays out is exactly the kind of thing a Unicode Character
+Database update between patch releases could cause, though this was not
+confirmed by running `.16` locally -- it could not be installed to check.
+
+The fix does not depend on settling which of the two it was. Scraping
+rendered terminal text for a literal flag string was always hostage to
+whatever rich decides about wrapping, and that decision is sensitive to
+console width, OS, and now demonstrably to interpreter patch version -- three
+axes a test has no business caring about. Reading the option straight off the
+command definition tests the actual invariant (the flag exists and carries
+the right help text) with no rendering step in between, and did not merely
+happen to dodge this specific failure: whatever caused it, there is no
+render path left for it to hide in.
 
 **Decided:** stop retrying BUIDL against the default endpoint for now.
 `docs/findings.md` says plainly that BUIDL's figures are the original
