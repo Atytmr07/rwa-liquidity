@@ -119,8 +119,10 @@ asset-specific factor between 1 and 11, which cannot be corrected with a scalar.
 ## 5. Concentration is extreme almost everywhere
 
 The 2010 US Horizontal Merger Guidelines treat an HHI above 2,500 as highly
-concentrated; the 2023 revision lowered that threshold to 1,800 (DOJ Antitrust
-Division, [justice.gov/atr/herfindahl-hirschman-index](https://www.justice.gov/atr/herfindahl-hirschman-index)).
+concentrated; the 2023 revision lowered that threshold to 1,800, and puts
+1,000--1,800 at "moderately concentrated" (US DOJ & FTC, *Merger Guidelines*
+SS2.1 (2023), as stated by the
+[DOJ Antitrust Division](https://www.justice.gov/atr/herfindahl-hirschman-index)).
 Of the ten measured assets, **eight exceed 2,500 and six exceed 5,000**; the
 same eight also clear the stricter 1,800 threshold (the two that don't, BUIDL
 at 1,618 and OUSG at 1,385, sit between "moderately" and "highly" concentrated

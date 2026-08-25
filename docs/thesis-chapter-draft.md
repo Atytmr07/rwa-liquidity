@@ -109,21 +109,33 @@ concludes.
 
 ## 2. Literature Review
 
-*(Condensed from `docs/literature-review.md`, which contains the full review
-with per-source confidence notes. Citations below should be verified against
-primary sources before submission — see that file's closing section for
-which entries were read in full versus at abstract/search-summary level.)*
+*(Condensed from `docs/literature-review.md`, which carries a verification
+marker on every source. Quotations in this section are taken from sources
+retrieved and read directly on 2026-08-25: Amihud (2002), Aquilina et al.
+(2025), Ben-David et al. (2016), Ma et al. (2025), Mafrur (2026), Nassr et
+al. (2024), Sai et al. (2021), and the DOJ page. Six sources remain at
+abstract or search-summary depth and are cited without quotation — Li (2025),
+Mafrur (2025), the ECB bulletin, the New York Fed post, the Nature/HSSC
+article, and the DeFi survey literature. Read those before quoting them. §8
+of the review file records three errors the unverified first pass contained,
+which is the reason this distinction is tracked at all.)*
 
 ### 2.1 Tokenization market context
 
-Tokenized money market funds and Treasury products have grown from under $1
-billion in early 2024 to over $15 billion by 2026, led by BlackRock's BUIDL
-fund (Bank for International Settlements, 2026). Li (2025), reviewing more
-than 180 tokenized products across six asset classes, reports "a persistent
-divergence between the theoretical advantages of 24/7 trading and the
-empirical reality of limited secondary-market activity and predominantly
-passive holding patterns" — an independent, much larger-sample precursor to
-this chapter's own findings in §4.
+Tokenised money market funds (TMMFs) are described by Aquilina, Lewrick,
+Ravenna and Schönleber (2025) as a fast-growing collateral asset within
+decentralised finance, subject to liquidity-mismatch risks that mirror those
+of conventional money market funds. Their finding bears directly on how the
+concentration results in §4.7 should be read: "Based on Ethereum data,
+companies operating DeFi protocols are the main investors in BUIDL, the
+largest TMMF to date" — so a small, institutional on-chain holder base is the
+expected structure for this asset class, not an anomaly of measurement. They
+also identify OUSG, likewise in this chapter's sample, as a fund-of-fund
+investing through BUIDL.
+
+Li (2025) surveys 180+ RWA products across their industrial organization,
+legal structure, regulatory framework, and on-chain activity — the
+largest-sample survey of the product space located for this review.
 
 ### 2.2 The closest prior empirical work
 
@@ -183,18 +195,36 @@ secondary market.
 
 ### 2.4 Precedent for separating primary and secondary activity
 
-The primary/secondary distinction this chapter treats as central is not
-novel outside crypto markets. In ETF markets, most investor-facing trading
-occurs in a secondary market between third parties on an exchange, while
-share creation and redemption occurs directly between the fund and a small
-set of authorized participants — a structurally identical distinction to the
-one drawn here between minting/redemption and holder-to-holder transfer.
-Within crypto markets specifically, Ma, Zeng, and Zhang (NBER Working Paper
-33882) analyze transaction-level creation and redemption events for major
-fiat-backed stablecoins directly from on-chain data, rather than from
-issuer-reported figures — methodologically the closest precedent for this
-chapter's approach of deriving primary-market classification from the ledger
-itself.
+The primary/secondary distinction this chapter treats as central is not novel
+outside crypto markets. Ben-David, Franzoni and Moussawi (2016) set out the
+ETF case: "Two mechanisms keep ETF prices in line with those of the basket
+that they aim to track: primary and secondary market arbitrage." Creation and
+redemption occur in the primary market between the fund and authorized
+participants — "a small group of institutions that are allowed to trade with
+the ETF sponsor directly" — in large blocks, while ordinary investors trade
+existing shares on an exchange. That is structurally the same distinction
+drawn here between minting/redemption and holder-to-holder transfer, in a
+literature with no connection to blockchains.
+
+Within crypto markets, Ma, Zeng and Zhang (2025) are the closest
+methodological precedent. They collect "transaction-level data on each
+stablecoin creation and redemption event for the six largest fiat-backed
+stablecoins" across Ethereum, Avalanche and Tron — deriving primary-market
+classification from the ledger rather than from issuer-reported figures, as
+this chapter does. They draw the ETF parallel themselves: stablecoin
+redemption at $1 "is restricted to a specific set of institutional
+arbitrageurs. The vast majority of investors can only trade stablecoins on
+secondary market exchanges, similar to investors trading ETF shares on
+secondary markets."
+
+Their concentration findings also anticipate §4.7's: USDT has "six
+arbitrageurs redeeming stablecoins during the average month," with the
+largest accounting for 66% of redemption activity, against 521 for USDC. One
+methodological difference is worth naming, because it is the same question
+this chapter's `totalSupply()` check exists to answer: they read the chain
+through commercial explorers (Etherscan, Snowtrace, Tronscan), whereas the
+measurements here query a node directly and verify the reconstruction against
+the contract's own supply.
 
 ### 2.5 Concentration measurement
 
@@ -202,14 +232,17 @@ Holder concentration is measured here with the Herfindahl-Hirschman Index
 (HHI) on the conventional 0–10,000 scale. The 2010 U.S. Horizontal Merger
 Guidelines treat an HHI above 2,500 as "highly concentrated"; the 2023
 revision lowered that threshold to 1,800 (U.S. Department of Justice,
-Antitrust Division). Both thresholds are reported in §4 to avoid citing a
-number without a guideline year attached. Crypto-specific concentration
-studies (e.g., Frontiers in Blockchain, 2021, on wealth inequality across
-cryptocurrencies) provide a useful contrast baseline: general-purpose
-cryptocurrencies typically show far flatter distributions than the tokenized
-RWA products measured here, which is consistent with RWA tokens behaving
-structurally more like a fund's cap table than like a payment network, and
-is noted as such rather than treated as a like-for-like comparison.
+Antitrust Division; Merger Guidelines § 2.1, 2023). Both thresholds are
+reported in §4 to avoid citing a number without a guideline year attached.
+
+Sai, Buckley and Le Gear (2021) provide the contrast baseline for
+general-purpose cryptocurrencies, reporting a Gini coefficient of 0.65 for
+Bitcoin and a **top-100** address share of 13.52% of supply. The tokenized
+RWA products measured in §4.7 show **top-10** shares of 82–100%. The gap is
+large enough that the two should not be read on the same scale: an RWA fund's
+holder list is structurally closer to a cap table than to a payment network's
+address distribution, and this chapter treats the comparison as context
+rather than as a like-for-like benchmark.
 
 ---
 
@@ -468,19 +501,26 @@ Verification status per source is in `docs/literature-review.md`.)*
 
 - Amihud, Y. (2002). Illiquidity and stock returns: cross-section and
   time-series effects. *Journal of Financial Markets*, 5, 31–56.
-- Bank for International Settlements. (2026). The rise of tokenised money
-  market funds. *BIS Bulletin*, No. 115.
+- Aquilina, M., Lewrick, U., Ravenna, F., & Schönleber, L. (2025). The rise of
+  tokenised money market funds. *BIS Bulletin*, No. 115, 26 November 2025.
+- Ben-David, I., Franzoni, F., & Moussawi, R. (2016). Exchange traded funds
+  (ETFs). NBER Working Paper 22829.
 - Datar, V. T., Naik, N. Y., & Radcliffe, R. (1998). Liquidity and stock
-  returns: an alternative test. *Journal of Financial Markets*, 1, 203–219.
-- Frontiers in Blockchain. (2021). Characterizing wealth inequality in
-  cryptocurrencies.
+  returns: an alternative test. *Journal of Financial Markets*, 1(2), 203–219.
 - Li, J. (2025). Current landscape of the real-world asset (RWA)
-  tokenization ecosystem. SSRN Working Paper 6077226.
-- Ma, Y., Zeng, Y., & Zhang, A. L. Stablecoin runs and the centralization of
-  arbitrage. NBER Working Paper 33882.
+  tokenization ecosystem. SSRN Working Paper 6077226, George Mason University.
+- Ma, Y., Zeng, Y., & Zhang, A. L. (2025). Stablecoin runs and the
+  centralization of arbitrage. NBER Working Paper 33882, May 2025.
 - Mafrur, R. (2025). Tokenize everything, but can you sell it? RWA liquidity
   challenges and the road ahead. arXiv:2508.11651.
 - Mafrur, R. (2026). Tokenized but illiquid? Evidence from real-world asset
   markets. arXiv:2606.01131.
+- Nassr, I. K., Kostika, E., & Melachrinos, A. (2024). Concentration of DeFi's
+  liquidity. OECD. https://doi.org/10.1787/4ed08440-en
+- Sai, A. R., Buckley, J., & Le Gear, A. (2021). Characterizing wealth
+  inequality in cryptocurrencies. *Frontiers in Blockchain*, 4.
+  https://doi.org/10.3389/fbloc.2021.730122
 - U.S. Department of Justice, Antitrust Division. Herfindahl-Hirschman
-  Index. Retrieved August 2026 from justice.gov/atr/herfindahl-hirschman-index.
+  Index (page updated 17 January 2024), citing U.S. Department of Justice &
+  FTC, *Merger Guidelines* § 2.1 (2023).
+  justice.gov/atr/herfindahl-hirschman-index
