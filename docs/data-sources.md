@@ -2,12 +2,13 @@
 
 What each provider actually supplies, and what is wrong with it.
 
-The DeFiLlama section was verified against the live API on the date noted rather
-than taken from documentation. The rwa.xyz and Dune sections were **not**: both
-are gated and no key was available, so those adapters were written against
-published documentation and every assumption that could not be checked is marked
-as such. The distinction is kept explicit throughout, because "the docs say" and
-"we saw it do this" are not the same claim.
+The DeFiLlama and Dune sections were verified against the live API on the dates
+noted rather than taken from documentation alone. The rwa.xyz section was
+**not**: it is gated behind an Enterprise plan with no published price, so that
+adapter was written against published documentation and every assumption that
+could not be checked is marked as such. The distinction is kept explicit
+throughout, because "the docs say" and "we saw it do this" are not the same
+claim.
 
 ## Summary
 
@@ -17,13 +18,20 @@ as such. The distinction is kept explicit throughout, because "the docs say" and
 | `defillama_prices` | yes | no | no | no |
 | `defillama_protocol_tvl` | yes | no | no | no |
 | `rwa_xyz` | yes* | no | no | yes |
-| `dune` | no | yes* | yes* | yes |
+| `dune` | no | yes | yes | yes |
 
 \* **Implemented against published documentation, never run against the live API.**
-No key was available when they were written. Their tests use payloads built from
-the docs, which proves the adapter handles the documented shape and nothing more.
-The `network`-marked tests in `tests/test_sources_keyed_live.py` skip themselves
-when no credential is set; run them first once you have one.
+rwa.xyz's Enterprise gate made a key unreachable for this project. Its tests use
+payloads built from the docs, which proves the adapter handles the documented
+shape and nothing more. The `network`-marked tests in
+`tests/test_sources_keyed_live.py` skip themselves when no credential is set.
+
+Dune was verified live on 2026-08-25: real saved queries against the registry
+(with `PAXG` excluded from both -- see below), a real API key, `evm_rpc`'s own
+BUIDL figures as an independent cross-check. Dune's 30-day BUIDL transfer count
+came back 727 against `evm_rpc`'s 731, and 58 holders against 59 -- close
+enough to be the same underlying reality read through two different windows
+of "now", not a coincidence worth chasing further.
 
 A source declares its capabilities rather than implementing every method and
 returning nothing for the parts it cannot serve. This matters: an empty transfer
@@ -235,7 +243,20 @@ Three properties of the published schema shape the adapter:
 ## Dune Analytics
 
 `GET https://api.dune.com/api/v1/query/{query_id}/results`, authenticated with
-the `X-Dune-Api-Key` header. Documentation read 2026-07-29.
+the `X-Dune-Api-Key` header. Documentation read 2026-07-29; verified against
+the live API on 2026-08-25, both saved queries actually returning data through
+`DuneSource`, not just matching the documented shape.
+
+**PAXG is excluded from both saved queries**, deliberately, not because the SQL
+can't express it. `evm_rpc` already can't measure PAXG at all -- its transfer
+volume exceeds what a full-history scan against a free endpoint will finish
+(`docs/methodology.md`) -- so there is nothing for a Dune figure to reconcile
+against, and PAXG is by far the most actively traded asset in the registry:
+included, the transfers query returned roughly 453,000 rows for a 90-day
+window across eleven assets, almost all of it PAXG. At Dune's free-tier export
+rate (1 credit per 1,000 data points), that alone is past the entire monthly
+allowance in one pull. Excluding it costs nothing this package can use and
+avoids burning a month's credits on a single `--refresh`.
 
 This endpoint returns the **last cached execution** and does not trigger a new
 one, though it still consumes credits proportional to result size. Executing a

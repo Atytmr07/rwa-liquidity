@@ -16,6 +16,7 @@ import httpx
 import polars as pl
 import pytest
 
+import rwa_liquidity.config
 from rwa_liquidity.cache import ParquetCache
 from rwa_liquidity.schema.asset import AssetRef
 from rwa_liquidity.schema.types import ZERO_ADDRESS, TransferKind
@@ -218,7 +219,25 @@ def test_unfinished_query_is_an_error(cache_root: Path) -> None:
         dune(cache_root, payload).fetch_transfers(ASSET, start=START, end=END)
 
 
-def test_unconfigured_query_id_explains_what_to_set(cache_root: Path) -> None:
+def test_unconfigured_query_id_explains_what_to_set(
+    cache_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Passing None only means "use the environment variable instead" (see
+    # DuneSource.__init__); it does not force the id unset. Without clearing
+    # these, this test passed only because no developer machine happened to
+    # have them set -- which stopped being true the day this project's own
+    # .env got real Dune credentials in it.
+    #
+    # Clearing the two variables is not sufficient on its own: config.py loads
+    # `.env` at most once per process, guarded by a module-level flag, and
+    # `load_dotenv(override=False)` only protects a variable that is already
+    # set. If this test is what happens to trigger that one-time load, it
+    # freely refills the very variables just cleared, straight from the file.
+    # Forcing the flag true first makes load_environment() a no-op regardless
+    # of whether anything upstream in this test run has called it yet.
+    monkeypatch.setattr(rwa_liquidity.config, "_loaded", True)
+    monkeypatch.delenv("DUNE_TRANSFERS_QUERY_ID", raising=False)
+    monkeypatch.delenv("DUNE_HOLDERS_QUERY_ID", raising=False)
     source = DuneSource(
         cache=ParquetCache(cache_root),
         client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200))),
