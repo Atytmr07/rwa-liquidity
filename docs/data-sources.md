@@ -257,7 +257,15 @@ the finding "this asset did not trade".
 `contract_address`, `from_address`, `to_address`, `amount`. `amount_usd` is
 optional; without it, USD-denominated metrics report themselves undefined rather
 than guessing a price. Amounts must be human-scaled, i.e. already divided by the
-token's decimals.
+token's decimals -- **per token**, not by one shared divisor. The registry's
+eleven assets are not uniform: checked on-chain, decimals run 6 (BUIDL,
+HLSCOPE), 8 (RCOIN, CGT), and 18 (the other seven). The single-address example
+below divides by a fixed `power(10, 6)`, which is only correct for BUIDL; a
+query scoped to the whole registry needs a `case contract_address when ...`
+switch on the divisor, or every non-BUIDL asset comes back scaled a million to
+a quintillion times too large. This is exactly the kind of error the column
+contract above cannot catch, because the columns are still the right shape --
+only the numbers in them are wrong.
 
 ```sql
 select
