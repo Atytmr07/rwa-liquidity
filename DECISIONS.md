@@ -14,6 +14,48 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-08-24 -- BUIDL's re-verification stays open; the scan does not
+
+**Decided:** stop retrying BUIDL against the default endpoint for now.
+`docs/findings.md` says plainly that BUIDL's figures are the original
+2026-07-30 measurement, not re-confirmed after the windowing rewrite, rather
+than implying a fresh confirmation that did not happen. `DEFAULT_RPC_URL`
+stays the free, keyless endpoint; it was not swapped for a paid one.
+
+**Alternatives considered and rejected:**
+
+- **Point `EVM_RPC_URL` at a paid provider for this one check.** Rejected. The
+  package's central claim is that its headline numbers are reproducible by a
+  stranger with no credentials; quietly stepping outside that for the one
+  figure most likely to be quoted would undermine the thing being verified in
+  the act of verifying it.
+- **Keep retrying.** Tested, not just considered: a script (kept out of the
+  repo, it served one validation run, not a code path) called `fetch_holders`
+  in a loop, 40 attempts, 90 seconds of real idle time between each, over 85
+  minutes. Every attempt failed identically -- `-32603 service temporarily
+  unavailable`, ~40 seconds in, no attempt getting further than any other.
+  That rules out what the 2026-08-14 entry's error message assumes: that a
+  pause clears it. For BUIDL specifically, right now, it does not. Further
+  identical attempts would only add load to a service already struggling,
+  for no evidence they would behave differently.
+
+**Why leaving it open is the right call rather than a gap to hide:** the
+scanning method itself was not left unverified. Nine of the ten other
+measured assets went through the identical code path this session and
+reconstructed correctly -- four of them (ZTLN, RCOIN, CGT, ATT) reproduced
+every published figure exactly, because zero activity in either window makes
+that the only correct answer; USDM's rebasing guard fired again, correctly,
+on a fresh scan; FDIT's implausible-transfer guard fired again, correctly.
+None of that logic is BUIDL-specific -- BUIDL differs only in needing roughly
+15x the requests (641 ten-thousand-block windows against a token deployed
+2024-03) of the next largest asset in the registry, which is exactly the
+axis the endpoint is throttling on. There is no path by which the same code,
+proven correct nine times, is silently wrong only for the one asset that
+could not finish a scan. The finding that needs re-confirming is a number,
+not a method.
+
+---
+
 ## 2026-08-15 -- `tzdata` is a base dependency, not an accident of `pandas`
 
 **Decided:** `tzdata; sys_platform == "win32" or sys_platform == "emscripten"` is a

@@ -13,6 +13,21 @@ history and checked against the contract's own `totalSupply()`; where the two
 agreed the distribution is exact, and where they did not the affected metrics are
 reported as undefined rather than estimated.
 
+**Re-verified 2026-08-24 for nine of the ten measured assets**, after a rewrite
+of the scanning method (`DECISIONS.md`, 2026-08-14/15 entries) changed how the
+underlying logs are fetched without changing what they mean. ZTLN, RCOIN, CGT
+and ATT reproduced every figure exactly; USDM's HHI matched exactly and its
+rebasing guard fired correctly again; FDIT, CANA, HLSCOPE and OUSG showed
+different turnover and dormancy (expected -- a different 30-day window has
+different activity) while holding concentration nearly constant (expected --
+ownership does not reshuffle in a month), matching the pattern already
+documented in SS7a. **BUIDL itself could not be re-verified**: forty attempts
+over 85 minutes, deliberately spaced to avoid the sustained load the endpoint's
+own error message names as the trigger, failed identically every time. See
+`DECISIONS.md`, 2026-08-24, for what that rules out and what it does not. The
+BUIDL figures below are the original 2026-07-30 measurement, not re-confirmed
+since.
+
 ## How these eleven assets were chosen
 
 Not by hand-picking. Every protocol DeFiLlama files under category `RWA` was
