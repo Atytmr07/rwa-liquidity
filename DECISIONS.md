@@ -33,11 +33,15 @@ stays the free, keyless endpoint; it was not swapped for a paid one.
   repo, it served one validation run, not a code path) called `fetch_holders`
   in a loop, 40 attempts, 90 seconds of real idle time between each, over 85
   minutes. Every attempt failed identically -- `-32603 service temporarily
-  unavailable`, ~40 seconds in, no attempt getting further than any other.
-  That rules out what the 2026-08-14 entry's error message assumes: that a
-  pause clears it. For BUIDL specifically, right now, it does not. Further
-  identical attempts would only add load to a service already struggling,
-  for no evidence they would behave differently.
+  unavailable`, ~40 seconds in. Checked afterwards rather than assumed: the
+  cache holds zero new BUIDL log-query entries from that 85-minute window.
+  Discovery and deployment detection succeed every time (cached from a
+  prior run), then not one of the 40 attempts got past its first live
+  `eth_getLogs` call against BUIDL's own address -- not partial progress
+  each time, none. That rules out what the 2026-08-14 entry's error message
+  assumes: that a pause clears it. For BUIDL specifically, right now, it does
+  not. Further identical attempts would only add load to a service already
+  struggling, for no evidence they would behave differently.
 
 **Why leaving it open is the right call rather than a gap to hide:** the
 scanning method itself was not left unverified. Nine of the ten other
