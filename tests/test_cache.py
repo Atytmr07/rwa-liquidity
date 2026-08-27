@@ -104,6 +104,52 @@ def test_write_leaves_no_temporary_files_behind(cache_root: Path, snapshots: pl.
     assert [p.name for p in cache_root.rglob("*") if p.is_file() and p.suffix != ".parquet"] == []
 
 
+def test_losing_a_concurrent_write_race_is_not_an_error(
+    cache_root: Path, snapshots: pl.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On Windows os.replace raises PermissionError while any other process holds
+    # the destination open, which a concurrent reader or writer of the same entry
+    # routinely does -- two `rwa-liquidity` commands scanning one asset is enough.
+    # Losing that race is harmless: entries are addressed by a digest of the
+    # request, so the winner wrote the answer to the same query. Simulated here
+    # rather than by spawning a process, so the test means the same thing on
+    # every platform (on POSIX the failure cannot be provoked at all).
+    cache = ParquetCache(cache_root)
+    cache.put(KEY, snapshots, retrieved_at=NOW)  # the "winner" puts a file in place
+
+    def refuse(*_args: object, **_kwargs: object) -> Path:
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(Path, "replace", refuse)
+    # Must not raise: the destination exists, so the entry this call wanted is
+    # already there.
+    cache.put(KEY, snapshots.with_columns(total_supply=pl.lit(2.0)), retrieved_at=NOW)
+
+    monkeypatch.undo()
+    entry = cache.get(KEY)
+    assert entry is not None
+    # The winner's copy survives untouched, and no temp file is left behind.
+    assert entry.frame["total_supply"].item() == snapshots["total_supply"].item()
+    assert [p.name for p in cache_root.rglob("*") if p.suffix != ".parquet" and p.is_file()] == []
+
+
+def test_a_refused_rename_with_no_file_in_place_still_raises(
+    cache_root: Path, snapshots: pl.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The complement of the test above, and the reason the retry cannot simply
+    # swallow PermissionError: with nothing at the destination, the failure is a
+    # read-only directory or a scanner holding the tree, not a lost race. Hiding
+    # it would leave the cache silently never writing anything.
+    cache = ParquetCache(cache_root)
+
+    def refuse(*_args: object, **_kwargs: object) -> Path:
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(Path, "replace", refuse)
+    with pytest.raises(PermissionError):
+        cache.put(KEY, snapshots, retrieved_at=NOW)
+
+
 def test_naive_retrieval_timestamp_is_rejected(cache_root: Path, snapshots: pl.DataFrame) -> None:
     # An unlabelled timestamp would make every TTL comparison wrong by the local
     # UTC offset, with no visible symptom.

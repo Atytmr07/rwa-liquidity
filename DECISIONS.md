@@ -14,6 +14,47 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-08-28 -- losing a cache write race is not an error, because entries are content-addressed
+
+**Decided:** `ParquetCache.put` retries a refused rename a few times and then,
+if the destination file exists, accepts that another process won and discards
+its own temporary file. A refusal with *no* file at the destination is still
+raised.
+
+**Alternatives:** retry indefinitely; take a lock file around the write;
+swallow `PermissionError` unconditionally; leave it and document that the CLI
+is single-instance.
+
+**Why:** the old code was written against POSIX semantics, and its comment said
+so outright -- "whichever renames last wins, and both are complete." That is
+true on POSIX, where a rename can replace a file another process has open. On
+Windows it is false: `os.replace` raises `PermissionError` (`WinError 5`) while
+any other handle to the destination is open, which a concurrent reader or
+writer of the same entry routinely holds.
+
+This was not found by reading the code. Two `rwa-liquidity` commands were run
+concurrently against the same registry, and one died partway through a scan
+with a `PermissionError` traceback pointing at `store.py`. Nothing about the
+failure looked cache-shaped from the outside -- it read as a crash in the
+middle of fetching logs.
+
+Accepting the loss is correct rather than merely convenient: cache entries are
+addressed by a digest of the request, so whoever won the race wrote the
+response to the *same* query. The purpose of the write is that the entry
+exists, not that this process authored it.
+
+Swallowing `PermissionError` unconditionally was rejected because it hides the
+case that actually matters -- a read-only cache directory, or a scanner holding
+the tree -- behind silent success, leaving a cache that never writes anything
+and a workflow that re-fetches forever without saying why. The existence check
+separates the two, and both branches are covered by tests that were confirmed
+to fail against the old implementation.
+
+A lock file was rejected as too much machinery for a problem whose entire cost
+is one redundant write.
+
+---
+
 ## 2026-08-27 -- PAXG measured through Dune as a control case, aggregated in SQL rather than pulled row by row
 
 **Decided:** PAXG, which `evm_rpc` refuses for exceeding the 250,000-log scan

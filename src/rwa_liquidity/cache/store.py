@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -49,8 +50,53 @@ _DIGEST_LENGTH: Final = 16
 ParamValue = str | int | float | bool | None
 
 
+#: How many times to retry a rename that Windows refuses because another
+#: process holds the destination open. The locks in question are held for the
+#: length of a file read, so a handful of short retries clears them; a longer
+#: schedule would only delay reporting a genuine permission problem.
+_REPLACE_ATTEMPTS: Final = 5
+_REPLACE_BACKOFF_SECONDS: Final = 0.05
+
+
 class CorruptCacheEntryError(Exception):
     """A cache file exists but cannot be read as an entry this package wrote."""
+
+
+def _replace_atomically(temporary: Path, path: Path) -> None:
+    """Rename `temporary` onto `path`, tolerating a lost race on Windows.
+
+    POSIX lets a rename replace a file that another process has open, so two
+    writers of the same key simply produce "last one wins" and both results are
+    complete. Windows does not: `os.replace` raises `PermissionError`
+    (`WinError 5`) while any other handle to the destination is open, which a
+    concurrent reader or writer of the same entry will routinely hold. Two
+    `rwa-liquidity` commands scanning the same asset at once is enough to hit
+    it, and it surfaced as a mid-scan crash rather than as anything cache-shaped.
+
+    Losing this race is harmless and must not be an error. Entries are addressed
+    by a digest of the request, so whoever won wrote the response to the *same*
+    query; the point of the write is that the entry exists, not that this
+    process is the one that created it.
+
+    A short retry loop clears the common case, where the holder is a reader that
+    finishes in milliseconds. If the destination exists after that, the write is
+    treated as satisfied by whoever won. Only a failure with no file in place is
+    re-raised -- that is a read-only directory or a scanner holding the whole
+    tree, which is a real problem and not a race.
+    """
+    for attempt in range(_REPLACE_ATTEMPTS):
+        try:
+            temporary.replace(path)
+        except PermissionError:
+            if attempt < _REPLACE_ATTEMPTS - 1:
+                time.sleep(_REPLACE_BACKOFF_SECONDS * (attempt + 1))
+                continue
+            if not path.exists():
+                raise
+            # Someone else wrote this key while we were working. Their copy
+            # answers the same request, so ours is redundant.
+            temporary.unlink(missing_ok=True)
+        return
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,11 +254,11 @@ class ParquetCache:
         # write leaves the previous entry intact rather than a truncated file
         # that would fail to parse on the next run. The uuid suffix keeps two
         # concurrent writers of the same key from clobbering each other's
-        # temporary file; whichever renames last wins, and both are complete.
+        # temporary file.
         temporary = path.with_name(f".{path.stem}-{uuid4().hex}.tmp")
         try:
             pq.write_table(table, temporary, compression="zstd")
-            temporary.replace(path)
+            _replace_atomically(temporary, path)
         except BaseException:
             temporary.unlink(missing_ok=True)
             raise
