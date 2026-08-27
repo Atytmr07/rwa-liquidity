@@ -31,9 +31,11 @@
 # Step 5 is a judgement, and it is the only one. It is made from the contract's
 # own name, which is recorded in each entry's `notes` so the call can be checked.
 #
-# Verified on-chain 2026-07-30. `supply` and `logs` in the notes are as of that
-# date and will drift; they are there to show the order of magnitude, not as
-# assertions about the present.
+# Verified on-chain 2026-07-30, with five further entries added 2026-08-27 from
+# a second pass over the same category (see the block preceding them). `supply`
+# and `logs` in the notes are as of the date each entry names and will drift;
+# they are there to show the order of magnitude, not as assertions about the
+# present.
 
 schema_version = 1
 
@@ -112,6 +114,82 @@ notes = """
 On-chain name() reads "Zoth Tokenized Liquid Note". Supply 150,000,000 against \
 **12 transfer logs in its entire history**. If any asset in this registry has no \
 secondary market, it is this one."""
+
+# --- added 2026-08-27, second pass over the RWA category -------------------
+#
+# The five entries below were resolved by the same procedure as the originals
+# (steps 1-5 above), re-run against DeFiLlama's current RWA category. They are
+# here to answer a specific objection to the first pass: that a sample in which
+# four of ten assets never traded might be measuring the method's reach rather
+# than the market, since the assets thin enough to scan exhaustively could be
+# exactly the ones with no secondary market to find.
+#
+# Two candidates from this pass were **excluded for exceeding the scan ceiling**,
+# and the exclusions are the informative part: Ethena's USDtb (~450,000 logs
+# estimated) and Usual's USD0 (~475,000). Both are DeFi-native and heavily
+# traded -- precisely the profile that would most enrich the sample, and
+# precisely what a free public endpoint cannot reconstruct. That is the same
+# boundary PAXG and XAUt sit on, met again with different assets.
+
+[[asset]]
+uid = "ethereum:0x136471a34f6ef19fe571effc1ca711fdb8e49f2b"
+symbol = "USYC"
+name = "US Yield Coin"
+defillama_slug = "circle-usyc"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "US Yield Coin"; Circle's tokenized short-duration \
+treasury product (formerly Hashnote). Supply 54,848,168 at 6 decimals; \
+~14,700 logs estimated. Added 2026-08-27."""
+
+[[asset]]
+uid = "ethereum:0x43415eb6ff9db7e26a15b704e7a3edce97d31c4e"
+symbol = "USTB"
+name = "Invesco Short Duration US Government Securities Fund"
+defillama_slug = "invesco-ustb"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "Invesco Short Duration US Government Securities Fund". \
+Worth recording that this address was first reached under the label \
+"Superstate USTB" and the contract's own name() corrected it -- exactly the \
+substitution step 3 exists to catch. Supply 55,938,277 at 6 decimals; ~33,100 \
+logs estimated. DeFiLlama's slug TVL (~$624M) far exceeds this contract's \
+value, so the mapping is an upper bound, as with OUSG. Added 2026-08-27."""
+
+[[asset]]
+uid = "ethereum:0xdd629e5241cbc5919847783e6c96b2de4754e438"
+symbol = "mTBILL"
+name = "Midas US Treasury Bill Token"
+defillama_slug = "midas-rwa"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "Midas US Treasury Bill Token". Supply 62,954,938 at 18 \
+decimals; ~17,700 logs estimated. `midas-rwa` is an umbrella slug covering \
+mBASIS and other Midas products alongside mTBILL, so its TVL is an upper bound \
+on this contract rather than a measurement of it. Added 2026-08-27."""
+
+[[asset]]
+uid = "ethereum:0xdd50c053c096cb04a3e3362e2b622529ec5f2e8a"
+symbol = "TBILL"
+name = "OpenEden T-Bills"
+defillama_slug = "openeden-tbill"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "OpenEden T-Bills". Supply 27,405,878 at 6 decimals; \
+~4,100 logs estimated -- among the thinnest in the registry by activity \
+despite a substantial supply. Added 2026-08-27."""
+
+[[asset]]
+uid = "ethereum:0x530824da86689c9c17cdc2871ff29b058345b44a"
+symbol = "STBT"
+name = "Short-term Treasury Bill Token"
+defillama_slug = "matrixdock-stbt"
+defillama_chain = "Ethereum"
+notes = """
+On-chain name() reads "Short-term Treasury Bill Token"; MatrixDock's \
+permissioned treasury product. Supply 24,258,449 at 18 decimals; ~2,400 logs \
+estimated across a 9.4-million-block life, the lowest log density of any \
+measurable asset here. Added 2026-08-27."""
 
 # ---------------------------------------------------------------------------
 # Tokenized private credit
