@@ -352,3 +352,17 @@ this package does.** Get it wrong and treasury issuance is counted as trading,
 which is the exact overstatement the package exists to prevent. It cannot be
 detected with certainty, so the adapter warns whenever every transfer in a window
 classifies as secondary and no issuer addresses were supplied.
+
+The CLI does not leave this entirely to the user. `known_addresses.toml`
+(`src/rwa_liquidity/sources/known_addresses.py`) is a hand-checked, per-asset
+record of `issuer_addresses` and of `excluded_contracts` -- holder-side
+addresses (AMM pools, lending vaults) that the concentration and dormancy
+metrics should drop before computing a share, for the same underlying reason:
+a contract that aggregates many end-users behind one balance is not one
+investor. `report` and `trend` load it automatically; the library functions
+default to neither list, since supplying either is an editorial act that must
+be visible in the call, not assumed on a caller's behalf. As of 2026-08-26 the
+file documents holder-side findings for OUSG, USDM, and CANA -- all found by
+checking Etherscan's own contract labels, not guessed from balance size --
+with no `issuer_addresses` yet verified for any asset; see the file itself for
+what was checked and what remains open.

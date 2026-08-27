@@ -157,7 +157,7 @@ arithmetic done by hand is in [`tests/test_metrics.py`](tests/test_metrics.py).
 | [DeFiLlama](https://defillama.com) prices | price, symbol, decimals | no | yes |
 | [DeFiLlama](https://defillama.com) protocol TVL | protocol-level value | no | yes |
 | [rwa.xyz](https://rwa.xyz) | market values, supply, holder counts | yes | no |
-| [Dune Analytics](https://dune.com) | transfers, holder balances | yes | no |
+| [Dune Analytics](https://dune.com) | transfers, holder balances | yes | **yes** |
 
 The on-chain adapter is the one that matters, and it needs no credentials. It
 reconstructs holder balances by replaying every `Transfer` event since a token was
@@ -172,12 +172,14 @@ That is tractable only because tokenized funds are thin. BUIDL's entire history 
 about 15,000 logs; a gold token's is a quarter of a million and the scan is
 refused.
 
-"Verified live" means the adapter has been run against the real API. rwa.xyz and
-Dune were written against published documentation because no keys were available;
-their tests prove they handle the documented shapes and nothing more. Every
-unverified assumption is listed in
-[`docs/data-sources.md`](docs/data-sources.md), which also carries the SQL a
-saved Dune query must produce.
+"Verified live" means the adapter has been run against the real API. Dune was
+verified 2026-08-25 against real saved queries, cross-checked against
+`evm_rpc`'s own BUIDL figures (727 vs. 731 transfers, 58 vs. 59 holders across
+independent 30-day windows). rwa.xyz remains written against published
+documentation only, because no key was available; its tests prove it handles
+the documented shapes and nothing more. Every unverified assumption is listed
+in [`docs/data-sources.md`](docs/data-sources.md), which also carries the SQL
+a saved Dune query must produce.
 
 Where sources disagree on the same figure, the package reports the variance
 rather than silently picking one.
@@ -235,8 +237,14 @@ version:
 - **On-chain data is not the whole market.** Off-chain settlement is invisible,
   so an actively traded asset can read as dormant.
 - **Addresses are not people.** One custodian holding for a thousand clients is
-  indistinguishable from a whale. Concentration figures are bounds, not
-  measurements.
+  indistinguishable from a whale. Checking real holder lists against Etherscan's
+  own contract labels found this happening: a DeFi lending vault holding ~25% of
+  OUSG's supply, counted as one holder, overstated its concentration (HHI 1,385
+  vs. 779 once excluded — see
+  [`known_addresses.toml`](src/rwa_liquidity/sources/data/known_addresses.toml)
+  and [`docs/findings.md`](docs/findings.md) §5a). `report` and `trend` exclude
+  known cases like it by default; unchecked assets still have this as an open
+  bound, not a measurement.
 - **Issuer classification is configuration, not detection.** An issuer that
   distributes from an unconfigured treasury has its issuance counted as trading.
   The package warns when that pattern is possible; it cannot rule it out.
@@ -265,9 +273,9 @@ version:
 - [x] **9** Keyless on-chain adapter, live pipeline, published findings
 - [x] **10** Ledger-derived history, six-window trends, issuance verification
 
-Not done: the two keyed adapters (rwa.xyz, Dune) need a first run against their
-real APIs, and the registry covers eleven Ethereum assets rather than the full
-multi-chain RWA universe.
+Not done: the rwa.xyz adapter needs a first run against its real API, and the
+registry covers eleven Ethereum assets rather than the full multi-chain RWA
+universe.
 
 ## License
 

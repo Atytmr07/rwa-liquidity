@@ -74,7 +74,7 @@ corrected after the fact.
 
 ### 1.3 Research questions
 
-This chapter addresses three questions empirically:
+This chapter addresses two questions empirically:
 
 - **RQ1.** For real, currently-trading tokenized RWA products, how large is
   the gap between raw transfer-based liquidity measures and liquidity
@@ -82,10 +82,18 @@ This chapter addresses three questions empirically:
 - **RQ2.** Is holder concentration in tokenized RWA markets consistent with
   the "broadened ownership" narrative commonly attached to tokenization, and
   does that concentration change over time?
-- **RQ3.** Can the primary/secondary distinction, and the holder
-  distributions it depends on, be established without relying on a licensed
-  or trust-requiring third-party data provider — i.e., can this measurement
-  be made independently reproducible and auditable?
+
+Both are answered under a **binding methodological constraint rather than a
+third research question**: every figure reported here must be derivable from
+public Ethereum infrastructure alone, with no licensed data feed and no API
+key, and every holder distribution must be checked against the token
+contract's own `totalSupply()` rather than accepted on a provider's word.
+This is a constraint on admissible evidence, not an empirical question — the
+answer to "can this be built" is settled by the working implementation, and
+the interesting content lies in what the constraint costs and what it buys.
+§3.1 states how it is enforced, §4.4 reports what the verification step
+actually caught, and §4.5 reports the one asset the constraint puts out of
+reach entirely.
 
 ### 1.4 Contribution
 
@@ -257,7 +265,8 @@ since contract deployment to reconstruct holder balances, then checks the
 reconstruction against the contract's own `totalSupply()` call. Where the two
 agree, the distribution is treated as exact; where they disagree (as with the
 rebasing token USDM, §4.6), the affected metrics are reported as undefined
-rather than published as an estimate. This is the basis for RQ3: the result
+rather than published as an estimate. This is how §1.3's methodological
+constraint is enforced: the result
 does not depend on trusting a third party's aggregation methodology, only on
 the correctness of the ERC-20 standard's own accounting invariant — a
 non-mint transfer cannot move more value than currently exists in supply —
@@ -277,25 +286,80 @@ assumption across the full sample.
 
 ### 3.3 Metric definitions
 
-For an asset `a` observed over a half-open window `P = [t₀, t₁)` (default 30
-days):
+**Notation.** Fix an asset $a$ and a half-open observation window
+$P = [t_0, t_1)$ (default 30 days). Let $\mathcal{T}(P)$ be the set of
+`Transfer` events emitted by $a$'s contract with block timestamp in $P$. Each
+event $\tau \in \mathcal{T}(P)$ carries a sender $s(\tau)$, a recipient
+$r(\tau)$, a value $v(\tau) \ge 0$ in the token's own units, and a class
+$k(\tau) \in \{\textsf{mint}, \textsf{burn}, \textsf{secondary},
+\textsf{unclassified}\}$ assigned by §3.2. A *mode* $m$ is a subset of those
+classes; write
 
-| Metric | Definition | Notes |
-|---|---|---|
-| Turnover ratio | `V(P, m) / S(t₁)` | `V` is transfer volume under mode `m`; `S(t₁)` is supply at window end |
-| Active holder ratio | `\|A(P, m)\| / H(t₁)` | `A` is the set of addresses on either side of a counted transfer |
-| Volume per active address | `V(P, m) / \|A(P, m)\|` | |
-| Top-10 holder share | `Σ(top 10 balances) / S(t₁)` | Burn addresses excluded; issuer/custody addresses included by default |
-| Holder HHI | `10,000 × Σᵢ(bᵢ / S(t₁))²` | Conventional 0–10,000 scale |
-| Dormancy | `Σ(balances not in A(P, m)) / S(t₁)` | Share of supply held by addresses inactive in the window |
+$$\mathcal{T}_m(P) = \{\tau \in \mathcal{T}(P) : k(\tau) \in m\}$$
 
-Every volume-based metric is computed in three modes — `all`, `secondary_
-only`, `primary_only` — with `secondary_only` as the default, on the
-argument that under-reporting liquidity is the safer failure direction for
-published research than over-reporting it. Full derivations, edge cases
-(e.g., why the active holder ratio can legitimately exceed 1, why a metric
-returns `None` rather than `0.0` when undefined), and the exact provenance
-schema returned alongside every value are documented in
+for the counted events, with the three modes used here being
+$m_{\text{all}} = \{\textsf{mint}, \textsf{burn}, \textsf{secondary}\}$,
+$m_{\text{sec}} = \{\textsf{secondary}\}$, and
+$m_{\text{pri}} = \{\textsf{mint}, \textsf{burn}\}$.
+
+Let $\mathcal{B}$ denote the burn addresses (the zero address and the
+conventional `0x…dEaD`), and $\mathcal{X}$ the excluded contract addresses of
+§5 — DeFi contracts confirmed to aggregate many end-holders behind a single
+balance. Let $H(t_1)$ be the set of addresses holding a non-zero balance at
+$t_1$, with $b_i(t_1)$ the balance of address $i$, and let
+
+$$S(t_1) = \sum_{i \in H(t_1)} b_i(t_1)$$
+
+be total supply at the window's end, reconstructed from full transfer history
+and checked against the contract's own `totalSupply()` per §3.1.
+
+**Counted volume and active addresses.**
+
+$$V(P, m) = \sum_{\tau \in \mathcal{T}_m(P)} v(\tau)
+\qquad
+A(P, m) = \bigl(\{s(\tau) : \tau \in \mathcal{T}_m(P)\} \cup
+                \{r(\tau) : \tau \in \mathcal{T}_m(P)\}\bigr) \setminus \mathcal{B}$$
+
+**The six metrics.** Let $\tilde{H}(t_1) = H(t_1) \setminus (\mathcal{B} \cup \mathcal{X})$
+be the holder set after exclusions, and $\tilde{S}(t_1) = \sum_{i \in \tilde{H}(t_1)} b_i(t_1)$.
+
+$$\text{Turnover}(P, m) = \frac{V(P, m)}{S(t_1)}
+\qquad
+\text{ActiveHolderRatio}(P, m) = \frac{\lvert A(P, m) \rvert}{\lvert H(t_1) \rvert}$$
+
+$$\text{VolumePerActive}(P, m) = \frac{V(P, m)}{\lvert A(P, m) \rvert}
+\qquad
+\text{Top-}n\text{Share}(t_1) = \frac{1}{\tilde{S}(t_1)} \sum_{i \in \tilde{H}_{(n)}(t_1)} b_i(t_1)$$
+
+$$\text{HHI}(t_1) = 10^4 \sum_{i \in \tilde{H}(t_1)} \left( \frac{b_i(t_1)}{\tilde{S}(t_1)} \right)^{\!2}
+\qquad
+\text{Dormancy}(P, m) = \frac{1}{\tilde{S}(t_1)} \sum_{i \in \tilde{H}(t_1) \setminus A(P, m)} b_i(t_1)$$
+
+where $\tilde{H}_{(n)}(t_1) \subseteq \tilde{H}(t_1)$ denotes the $n$ addresses
+with the largest balances, $n = 10$ by default.
+
+**Domain notes.** $\text{ActiveHolderRatio}$ is *not* bounded above by 1: an
+address may trade during $P$ and hold nothing at $t_1$, so it enters the
+numerator without entering the denominator. Values above 1 are reported with
+a warning rather than clamped, since the churn they indicate is itself a
+liquidity signal. $\text{Top-}n\text{Share}$ and $\text{Dormancy}$ *are*
+bounded in $[0, 1]$ by construction, so a computed value outside that interval
+proves the holder reconstruction disagrees with reported supply; the metric is
+then returned as undefined rather than published (this is the guard that fires
+on USDM, §4.6). Every metric is undefined when its denominator is zero — an
+empty $A(P, m)$, or $\tilde{S}(t_1) = 0$ — and returns $\varnothing$ rather
+than $0$, since "no denominator" and "measured zero" are different findings.
+
+$\text{Turnover}$ divides by unexcluded $S(t_1)$ rather than $\tilde{S}(t_1)$
+deliberately: a DeFi vault's holdings are part of supply in existence, and
+netting them out of the denominator of a *flow* measure would inflate turnover
+against a supply figure that does not match the chain.
+
+Every volume-based metric is computed in all three modes, with
+$m_{\text{sec}}$ as the default, on the argument that under-reporting
+liquidity is the safer failure direction for published research than
+over-reporting it. Full derivations, further edge cases, and the exact
+provenance schema returned alongside every value are documented in
 `docs/methodology.md`.
 
 ### 3.4 Sample construction
@@ -307,6 +371,19 @@ were governance tokens of RWA-adjacent protocols rather than tokenized assets
 themselves and were discarded (the full procedure is recorded in
 `src/rwa_liquidity/sources/data/defillama.toml`). The resulting sample spans
 Treasury funds, private credit, gold, carbon allowances, and a green bond.
+
+**Second pass (2026-08-27).** The same procedure was re-run against the
+category's current membership, specifically to test whether the first pass's
+sample was unrepresentatively thin. Seven further candidates were resolved
+on-chain and five were added: USYC (Circle), USTB (Invesco), mTBILL (Midas),
+TBILL (OpenEden) and STBT (MatrixDock). Two were excluded for exceeding the
+scan ceiling, and are discussed in §4.5. The resolution step earned its place
+here as well: one address, approached under the label "Superstate USTB",
+returned `name() = "Invesco Short Duration US Government Securities Fund"` and
+is recorded under the issuer its contract actually names. The findings reported
+in §4 predate this expansion and are stated over the original ten measurable
+assets; the enlarged registry is available for replication and is noted here so
+the sample's construction is not mistaken for a fixed list.
 
 ### 3.5 Historical reconstruction for trend analysis
 
@@ -357,6 +434,27 @@ figure wrong by a factor between 1x and 11x depending on the specific asset,
 which by construction cannot be corrected with a single scalar applied
 across the sample.
 
+**On what this result is, and is not, surprising.** That BUIDL exhibits
+almost no secondary trading should not be read as a finding about BUIDL's
+design being defective — it is a regulated, permissioned money-market-fund
+share whose transfer function enforces a whitelist of KYC-verified investors.
+Subscription and redemption through the issuer *are* the intended mechanism;
+free peer-to-peer circulation on a public venue is neither expected nor, for
+most of these products, permitted. A finance reader who knows the instrument
+class will find a low secondary-turnover figure for an institutional
+tokenized MMF unremarkable in itself.
+
+The contribution here is therefore not the discovery that permissioned funds
+trade little. It is that the *published, widely-cited* on-chain figures for
+these products do not distinguish the two mechanisms at all, so a reader
+outside the instrument class — and, more consequentially, a model calibrated
+on those figures — cannot tell an asset whose 0.2015 of monthly activity is
+mostly subscription flow from one whose 0.2015 is mostly investor-to-investor
+trading. Both read identically on a dashboard. The 10.8x figure is the size of
+that ambiguity for one asset, and §4.3 shows the same split distinguishes
+"thin but functioning" from "no secondary market whatsoever," which is a
+distinction raw volume cannot express even in principle.
+
 ### 4.3 RQ1 (continued) — four of ten assets show no secondary market at all
 
 ZTLN, RCOIN, ATT, and CGT recorded zero holder-to-holder transfers in the
@@ -371,21 +469,62 @@ reader cannot distinguish "0.2015 of raw activity, almost none of it
 secondary" from "0.2015 of raw activity, all of it secondary" without the
 split.
 
-### 4.4 RQ3 (issuance verification) — the primary/secondary classification checks out
+### 4.4 What the verification step caught — zero-address minting is confirmed; treasury-routed issuance is not ruled out
 
 Because the on-chain adapter replays full transfer history rather than a
 recent window, it can check whether a token has *ever* minted through the
-zero address — and a token with at least one such mint has, by construction,
-visible issuance, meaning a window with no mints reflects timing rather than
-a hidden treasury distribution. Across all ten measurable assets, every one
-mints through the zero address (mint counts over full history ranging from 2
-for ZTLN to 11,622 for BUIDL). This converts what would otherwise be a
-blanket, unfalsifiable caveat — "issuance might be happening through an
-unconfigured treasury address" — into a checked fact for this specific
-sample: the secondary-only figures reported here are measurements, not upper
-bounds subject to an undetectable issuance leak.
+zero address. Across all ten measurable assets, every one does (mint counts
+over full history ranging from 2 for ZTLN to 11,622 for BUIDL). This rules out
+one specific failure: an asset that issues *exclusively* through an
+unconfigured treasury and would therefore show zero zero-address mints, ever,
+under this method.
 
-### 4.5 RQ3 (continued) — where verifiability has a cost
+It does not rule out the narrower and more consequential version of the same
+risk — an asset that mints its initial tranche through the zero address and
+distributes some later portion of supply from a treasury address instead,
+which this method would classify as ordinary secondary trading. An earlier
+draft of this chapter argued that at least one historical zero-address mint
+converts the treasury-distribution caveat into "a checked fact for this
+specific sample." That argument does not hold: a single mint proves the asset
+*can* issue through the zero address, not that everything counted as
+secondary here *did* trade rather than get distributed later through an
+unconfigured address. The correction matters most for the assets with
+meaningful secondary-classified volume, since an asset with zero secondary
+transfers has nothing for this failure mode to inflate: BUIDL (32 secondary
+transfers), USDM (255), CANA (102), OUSG (21).
+
+Ruling this out for a specific asset requires that asset's actual treasury or
+transfer-agent address, supplied through `issuer_addresses`
+(`known_addresses.toml`, §5). Rather than leave that as an open caveat, a
+targeted search was run on 2026-08-27 for the on-chain signature of a
+distributor — an address that took delivery of a mint from the zero address and
+then sent onward to many distinct recipients — across the assets whose windows
+classified every transfer as secondary. Two candidates were confirmed by
+Etherscan's own address labels, one was rejected for lacking any:
+
+| Asset | Address | Label | Status |
+|---|---|---|---|
+| CANA | `0xccadea5c…` | "Maseer: Deployer" | **confirmed**, 113 distinct recipients |
+| CGT | `0x6522b05f…` | "CACHE Gold: Old Backed Treasury" | **confirmed**, dormant since 2021 |
+| OUSG | `0x3d85c41e…` | *(none)* | **rejected** — behaviour only, no label |
+
+The measured impact is small and is reported as such. CANA's issuer address
+appears in 146 of that token's 6,157 lifetime transfers but in **zero** of the
+transfers inside the measurement window, so §4.2's figures do not move; it
+appears in 11 of the 1,885 transfers spanning the six trend windows (0.6%).
+CGT's treasury has been inactive since 2021-10-30, roughly five years before
+the window, and touches none of the transfers reported here. For OUSG, where
+no address could be confirmed, the exposure is bounded instead of resolved: 3
+of its 50 window transfers involve the rejected candidate, so at most 3 of 50
+could be misclassified on that account.
+
+The zero-address check therefore establishes that the classification's
+foundational assumption is not violated in the one way full history can detect,
+and the search above bounds the residual risk at a few transfers per asset for
+this sample. Neither is a proof that every secondary-classified transfer here
+is genuinely secondary, and that is not claimed.
+
+### 4.5 What the constraint costs — the asset it puts out of reach
 
 PAXG's transfer history exceeds roughly 250,000 logs, past what a free
 public RPC endpoint will serve for an exhaustive scan; it is reported as
@@ -399,6 +538,72 @@ tractable exactly for the thin, low-activity assets whose liquidity is most
 in question, and intractable for the actively-traded assets a licensed
 aggregator can summarize but a third party cannot independently re-derive
 from public infrastructure alone.
+
+The second pass over DeFiLlama's RWA category (§3.4) met the same boundary
+with different assets: of seven candidates resolved on-chain, five were added
+to the registry and two — Ethena's USDtb (approximately 450,000 transfer logs)
+and Usual's USD0 (approximately 475,000) — were excluded for the same reason as
+PAXG. Both are DeFi-native and heavily traded, which is precisely the profile
+that would most enrich the sample and precisely what a free endpoint cannot
+reconstruct.
+
+### 4.5a Testing the boundary from the other side: PAXG through a paid source
+
+The §4.5 constraint invites an objection that should be stated at full
+strength: if the method reaches only assets thin enough to scan exhaustively,
+then the finding that these assets barely trade may describe the method's
+reach rather than the market, making §4.2 and §4.7 close to circular.
+
+Answering it requires measuring an asset from beyond the boundary and seeing
+whether the method still discriminates. PAXG was therefore measured over the
+identical 30-day window using Dune Analytics, with the primary/secondary
+classification re-expressed in SQL — the same two rules (zero address, burn
+address), a different execution engine and a different underlying index. The
+reconstruction was subjected to the same invariant as every other figure in
+this chapter: reconstructed balances sum to 441,940.72 PAXG against the
+contract's own `totalSupply()` of 441,941.91, a discrepancy of 1.19 tokens or
+**0.00027%**.
+
+| | PAXG (Dune) | The ten permissioned assets (`evm_rpc`) |
+|---|---|---|
+| Holders | 84,962 | 2 – 1,587 |
+| Secondary transfers in window | 135,145 | 0 – 255 |
+| Turnover, secondary-only | 0.7172 | 0.0000 – 1.0767 |
+| Overstatement factor | 1.03x | 1.0x – 10.8x |
+| Top-10 holder share | 34.0% | above 92% for nine of ten |
+| Holder HHI | 378 | 1,385 – 9,362 |
+| Dormancy | 73.0% | 0% – 100% |
+
+**The method discriminates.** Applied to a tokenized RWA that genuinely trades,
+it reports one: an HHI of 378 sits below even the 1,500 "unconcentrated" floor,
+against a sample in which eight of ten exceed 2,500; a top-10 share of 34%
+against 92%-plus for nine of ten. The instrument is not constructed to find
+illiquidity, and it does not find it here.
+
+Two consequences follow, and both **narrow** this chapter's claims rather than
+widening them:
+
+1. **The primary/secondary correction is near-irrelevant where a real secondary
+   market exists.** PAXG's overstatement factor is 1.03x, the smallest measured
+   anywhere in this study: only 37 of 135,182 transfers in the window were
+   issuance. §4.2's finding is therefore properly scoped as *raw volume
+   overstates secondary liquidity for permissioned funds that issue and redeem*,
+   not for tokenized RWAs generally.
+2. **Tokenization is capable of producing broad ownership; these funds do not
+   exhibit it.** PAXG is a tokenized real-world asset with 84,962 holders and
+   low concentration. §4.7's concentration result is thus a finding about
+   regulated, whitelist-gated fund shares as an instrument class — a narrower
+   and more defensible claim than one about tokenization as such.
+
+**Limits of this test.** These figures traverse a different code path from every
+other number reported here: Dune's indexed event tables queried in SQL, rather
+than this chapter's own log replay. The supply cross-check is a genuine
+verification but a single one, not the full per-asset reconciliation §3.1
+performs. PAXG remains outside what a third party can reproduce without a data
+provider relationship, which is the actual substance of the §4.5 boundary. One
+control case also cannot establish that every asset past the boundary behaves
+as PAXG does; it establishes only that the method's findings are not an artifact
+of which assets it can reach.
 
 ### 4.6 A verification failure that improved the result
 
@@ -422,10 +627,36 @@ Eight of the ten measurable assets exceed an HHI of 2,500 (the 2010 DOJ/FTC
 (with supply and holder distributions reconstructed at each window's end,
 per §3.5, rather than taken from the present), top-10 concentration moved by
 less than one percentage point for seven of nine measurable assets over six
-months; OUSG is the one clear mover, rising from 82.4% to 92.9%. Secondary
-turnover over the same six windows shows no aggregate trend: two assets rose,
-four fell, four remained flat at zero in every window. On this sample, over
-six months, tokenization did not measurably broaden ownership.
+months. Secondary turnover over the same six windows shows no aggregate trend:
+two assets rose, four fell, four remained flat at zero in every window. On this
+sample, over six months, tokenization did not measurably broaden ownership.
+
+**A correction, and the reason it matters.** An earlier version of this section
+reported OUSG as "the one clear mover," rising from 82.4% to 92.9%, and read
+that as concentration increasing. That series was computed before the
+holder-side exclusions of §5 existed. Regenerated on 2026-08-27 with Flux
+Finance's fOUSG lending vault excluded, OUSG instead **falls from 78.4% to
+70.0%** — the direction of the only non-flat series in the dataset reverses.
+
+The confound is isolable. Two things differ between the two runs: the exclusion,
+and the window positions, which slide with the present. Holding the window fixed
+and toggling only the exclusion moves OUSG's top-10 share from 94.2% to 70.0%,
+a 24-point swing that no five-week shift in window placement could produce. The
+exclusion is the cause; OUSG was deconcentrating while a growing vault position
+made it appear to concentrate.
+
+This is offered as the clearest available evidence that the address-versus-
+investor limitation stated in §5 is not a formality. It did not blur a
+coefficient at the margin: it inverted the sign of a reported finding. Any
+study computing holder concentration from raw on-chain balances, without
+identifying which addresses are contracts aggregating many end-holders, is
+exposed to the same failure — and the failure is silent, since a wrong series is
+as smooth and as plausible as a right one.
+
+BUIDL could not be re-measured on the regenerated run (the public endpoint
+refused the scan partway, §4.5), so its previous flat reading stands
+unconfirmed. No exclusion applies to BUIDL, so its figure is not expected to
+move — an expectation, not a verification.
 
 ---
 
@@ -443,8 +674,33 @@ actively-traded asset whose trades settle off-chain would read as dormant.
 addresses. A custodian holding for a thousand retail clients behind one
 address is indistinguishable here from a single large holder, and one
 investor split across ten addresses is indistinguishable from ten separate
-investors. Both directions of error are possible and neither is corrected;
-HHI and top-10 share should be read as bounds rather than precise investor
+investors. This is not a hypothetical failure mode: checking each measurable
+asset's top holders against Etherscan's own contract labels on 2026-08-26
+found, for three of the ten, an address that is by construction many
+end-holders behind one balance rather than one investor. OUSG's largest
+holder, at roughly 25% of supply, is `Flux Finance: fOUSG Token`, a lending
+vault that accepts OUSG as collateral; USDM's largest holder is Mountain
+Protocol's own `wUSDM` wrapper contract; CANA's top holders include both an
+asset-specific Uniswap V2 pool and Uniswap V4's global pool-manager contract.
+These are recorded, with their citation, in `known_addresses.toml`
+(`src/rwa_liquidity/sources/known_addresses.py`) and excluded from this
+chapter's top-10-share, HHI, and dormancy figures by default when computed
+through the CLI (`docs/methodology.md` §2.4).
+
+**The consequences are not marginal.** Excluding OUSG's vault moves its HHI
+from 1,422 to 779 — across the DOJ/FTC "highly concentrated" threshold — and
+its top-10 share from 94.2% to 70.0%. More seriously, it reverses the direction
+of the only non-flat trend series in the study (§4.7): OUSG reads as
+concentrating with the vault counted and as deconcentrating without it. A study
+that computes holder concentration from raw balances, without separating
+contracts that aggregate many end-holders from individual investors, is exposed
+to a failure that is both large and silent.
+
+The correction is not exhaustive: only three assets, and only the contracts an
+explorer label made identifiable, have been checked. An asset absent from that
+file has not been verified clean, only unexamined, and both directions of the
+address-versus-investor error remain possible wherever the file is silent — HHI
+and top-10 share should still be read as bounds rather than as precise investor
 concentration.
 
 **Single-chain scope.** All measurements are Ethereum-only. BUIDL, for
@@ -457,7 +713,14 @@ than one specific to this implementation.
 
 **Sample size and time depth.** Ten measurable assets and six monthly
 windows support a directional finding, not a growth-rate estimate. The trend
-results in §4.7 are reported as direction only for this reason.
+results in §4.7 are reported as direction only for this reason. Four of the
+ten recorded no secondary transfers at all, so the volume-based results rest
+in practice on six assets and the trend results on fewer. The registry has
+since been widened to sixteen entries (§3.4) and PAXG measured as a control
+case (§4.5a), which addresses the question of whether the sample was
+*systematically* thin, but does not convert ten observations into a panel.
+Claims here are stated for this sample and this window rather than for
+tokenized RWA markets in general.
 
 **Two of five data adapters remain unverified against live APIs.** The
 keyless on-chain adapter that produced every finding in §4 has been run

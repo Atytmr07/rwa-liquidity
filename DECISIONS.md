@@ -14,6 +14,129 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-08-27 -- PAXG measured through Dune as a control case, aggregated in SQL rather than pulled row by row
+
+**Decided:** PAXG, which `evm_rpc` refuses for exceeding the 250,000-log scan
+ceiling, was measured once through Dune Analytics over the published 30-day
+window, with the primary/secondary rules re-expressed in SQL. It is **not**
+added to the live pipeline; the numbers live in `docs/findings.md` §7a and
+`docs/thesis-chapter-draft.md` §4.5a as a control case, labelled as coming from
+a different code path.
+
+**Alternatives:** leave PAXG unmeasured and keep the boundary as a pure
+limitation; add PAXG to the Dune saved queries so every `report` run includes
+it; raise `DEFAULT_MAX_LOGS` past 250,000 and let `evm_rpc` try.
+
+**Why:** the strongest objection to this project's headline findings is that
+they might be circular -- if the method only reaches assets thin enough to scan
+exhaustively, then "these assets barely trade" could describe the method's
+reach rather than the market. That objection cannot be answered by reasoning;
+it needs an asset from the other side of the boundary. Measured, PAXG comes back
+with 84,962 holders, an HHI of 378, a top-10 share of 34%, and a
+primary/secondary overstatement factor of 1.03x -- against a sample where eight
+of ten exceed HHI 2,500 and BUIDL's factor is 10.8x. The method discriminates,
+and the finding is properly scoped: raw volume overstates secondary liquidity
+**for permissioned funds that mint and redeem**, not for tokenized RWAs as a
+class.
+
+Two implementation notes worth recording. First, the cost objection that
+originally justified excluding PAXG (roughly 453,000 rows for a 90-day window,
+past Dune's whole free monthly allowance) applies to *pulling raw rows*.
+Aggregating in SQL and returning summary rows instead cost **0.38 credits** for
+the transfer split and **103.8** for the balance reconstruction -- about 4% of
+the monthly allowance rather than 40%+. The earlier estimate was not wrong, it
+was answering a different question. Second, the Dune reconstruction was held to
+the same invariant as everything else: balances summed to 441,940.72 against
+the contract's own `totalSupply()` of 441,941.91, a 0.00027% discrepancy. A
+figure from a paid source still has to reconcile.
+
+Raising `DEFAULT_MAX_LOGS` was rejected for the reason it was set: the ceiling
+is not arbitrary, it is roughly where a free endpoint stops serving sustained
+scans, and PAXG's log count grows. Moving the number defers the refusal without
+removing it.
+
+---
+
+## 2026-08-27 -- issuer addresses are found by distributor signature, then gated on an explorer label
+
+**Decided:** `issuer_addresses` in `known_addresses.toml` is now populated for
+two assets -- CANA (`0xccadea5c…`, Etherscan "Maseer: Deployer") and CGT
+(`0x6522b05f…`, Etherscan "CACHE Gold: Old Backed Treasury"). A third and
+stronger-by-behaviour candidate for OUSG (`0x3d85c41e…`, 220 sends to 12
+distinct recipients) was **rejected** and recorded as rejected.
+
+**Alternatives:** configure every address matching the distributor signature;
+keep `issuer_addresses` empty and continue reporting the risk as an
+unquantified caveat.
+
+**Why:** the search itself is behavioural -- find addresses that took delivery
+of a zero-address mint and then distributed onward to many distinct recipients,
+which is what an issuer's treasury looks like on chain. But behaviour alone
+cannot distinguish a treasury from an early whale or a market maker, and
+configuring an address as an issuer *reclassifies its transfers as primary*,
+which lowers reported secondary liquidity. Acting on the signature alone would
+make the package understate liquidity on a guess -- the mirror image of the
+error it exists to prevent, and worse for being invisible. So the signature
+selects candidates and an independent label confirms them; OUSG's candidate had
+no label and was left out despite being the most suggestive of the three.
+
+The residual risk is now bounded rather than merely admitted, which was the
+point. CANA's issuer touches zero transfers in the published window (11 of 1,885
+across the six trend windows); CGT's has been dormant since 2021; OUSG's
+unconfirmed candidate touches 3 of that asset's 50 window transfers. Those
+bounds are in `docs/findings.md` §8 and the thesis §4.4.
+
+---
+
+## 2026-08-26 -- known_addresses.toml: hand-verified DeFi-contract exclusions and issuer addresses, loaded by the CLI
+
+**Decided:** a new file, `src/rwa_liquidity/sources/known_addresses.py` and its
+data file `known_addresses.toml`, records per-asset `excluded_contracts`
+(dropped from concentration/dormancy) and `issuer_addresses` (classified as
+primary rather than secondary), each entry required to carry a citation in
+`notes`. The `report` and `trend` CLI commands load it automatically and pass
+the flattened sets into `build_report`/`build_trend`'s existing `exclude`
+parameter and `EvmRpcSource`'s existing `issuer_addresses` parameter. The
+library functions themselves keep defaulting to neither -- the CLI's use of
+the file is a convenience layered on top, not a change to what the functions
+do when called directly.
+
+**Alternatives:** leave `exclude` and `issuer_addresses` as advanced,
+undiscovered constructor arguments a user must know to pass; hard-code the
+known contract addresses directly into the registry or into `evm_rpc.py`.
+
+**Why:** both mechanisms already existed -- `classify_transfers`'s
+`issuer_addresses` rule and `build_report`'s `exclude` parameter -- and both
+were exercised only by tests. In production the CLI always constructed
+`EvmRpcSource()` with no arguments and always called `build_report()` with
+`exclude` unset, so every real run measured concentration and dormancy with
+zero contracts excluded and classified every transfer as if issuance only
+ever happened through the zero address. Checking the top holders of the
+registry's four most active assets against Etherscan's own contract labels
+(2026-08-26) found real cases: OUSG's largest holder (~25% of supply) is
+`Flux Finance: fOUSG Token`, a lending vault; USDM's largest holder is
+Mountain Protocol's own `wUSDM` wrapper; CANA's top holders include a
+CANA-specific Uniswap V2 pool and Uniswap V4's global pool-manager contract.
+None of that was reachable by the package's existing mechanisms without
+someone doing the manual lookup and wiring it in -- this closes that gap for
+the three assets checked. It does not close it for the rest of the registry,
+and it found no `issuer_addresses` yet for any asset -- see the file's own
+`notes` fields for what each entry does and does not establish, and
+`docs/thesis-chapter-draft.md` §4.4 for a related correction: an earlier draft
+overclaimed that one historical zero-address mint rules out treasury-routed
+issuance for the rest of an asset's history, which does not follow and has
+been rewritten.
+
+A file separate from `registry.py` was chosen over hard-coding because the
+two serve different questions on different schedules: the DeFiLlama registry
+states what an asset *is*, required for every entry before the asset can be
+measured at all; this file states what is *known* about an asset's holder set
+and issuance, which is optional, grows only as assets are checked by hand, and
+should be reviewable (and disputable) as a record of citations rather than as
+inline constants.
+
+---
+
 ## 2026-08-25 -- CLI help is tested by introspection, not by scraping rich's output
 
 **Decided:** `test_live_mode_is_offered_and_needs_no_key` and

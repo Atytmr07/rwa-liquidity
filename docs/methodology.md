@@ -145,16 +145,31 @@ top_n_share = (Σ of the n largest balances) / S(t₁)
 Default `n = 10`.
 
 **Exclusions.** Burn addresses are always excluded: tokens sent there are
-destroyed and their holder is not a participant. Issuer treasuries, bridge
-contracts, and custody addresses are **included by default**. Excluding them
-would bury an editorial judgement inside a published number; including them is
-wrong in a way the reader can see and correct through the `exclude` argument,
-which is then recorded in the provenance.
+destroyed and their holder is not a participant. Beyond that, `build_report`'s
+`exclude` argument defaults to empty -- calling the library directly excludes
+nothing but burns unless the caller says otherwise, because excluding an
+address is an editorial judgement that must be visible, not assumed.
 
-For tokenized funds this matters a lot. An issuer holding unsold inventory will
-dominate the holder list, and the resulting concentration figure describes
-inventory rather than investor concentration. Read the exclusions field before
-quoting the number.
+The CLI (`report`, `trend`) does supply a default: every address listed in
+`known_addresses.toml`, a hand-checked file of contracts confirmed to
+aggregate many end-holders behind one balance -- an AMM pool, a lending vault
+that accepts the asset as collateral -- with an Etherscan label or equivalent
+citation for each entry (`src/rwa_liquidity/sources/known_addresses.py`). This
+is deliberately narrower than "everything that isn't an individual investor":
+issuer treasuries and custody addresses are left in because they are usually
+one economic entity, same as an investor's own wallet, and bridge contracts
+are left in and disclosed rather than excluded, because this package measures
+one chain and a bridge holding an asset in escrow is a fact about supply
+leaving that chain, not a DeFi contract standing in for many end-holders. Only
+the assets in `known_addresses.toml` have been checked; an asset absent from
+it has not been, which is not the same as "checked and clean" -- see that
+file's own notes for what was found and when.
+
+For tokenized funds this matters a lot regardless of which exclusions apply. A
+lending vault or an issuer holding unsold inventory can dominate the holder
+list, and the resulting concentration figure then describes vault or inventory
+concentration rather than investor concentration. Read the exclusions field
+before quoting the number.
 
 ### 2.5 Holder HHI
 
