@@ -1,0 +1,133 @@
+# Known non-investor addresses per asset: DeFi contracts that hold a balance on
+# behalf of many end users, and (eventually) issuer/treasury addresses that mint
+# or distribute outside the zero-address convention.
+#
+# This file exists because `top_10_holder_share`, `holder_hhi`, and `dormancy`
+# cannot tell an AMM pool or a lending vault from an individual investor on
+# their own -- both are just an address with a balance. Left unconfigured, a
+# pool holding 25% of an asset's supply is reported as "one whale," which
+# overstates concentration in one direction and, because that pool's balance is
+# also excluded from nobody's `dormancy`, understates it in another.
+#
+# Every entry here was found by hand on 2026-08-26, cross-checking Etherscan's
+# own address labels (not guessed from balance size alone) against
+# `eth_getCode` to confirm the address is a contract. An asset absent from this
+# file has not been checked -- that is not the same as "checked and clean."
+#
+# `excluded_contracts` are addresses to drop from the holder distribution before
+# computing concentration and dormancy metrics (see `build_report`'s `exclude`
+# parameter). `issuer_addresses` are treasury/distributor addresses whose
+# transfers should be classified as primary rather than secondary (see
+# `classify_transfers`); none are populated yet -- see the note on each entry.
+
+schema_version = 1
+
+[[asset]]
+uid = "ethereum:0x1b19c19393e2d034d8ff31ff34c81252fcbbee92"  # OUSG
+excluded_contracts = [
+    "0x1dD7950c266fB1be96180a8FDb0591F70200E018", # Flux Finance: fOUSG Token
+]
+issuer_addresses = []
+notes = """
+Rank-1 holder at ~25% of supply is Flux Finance's fOUSG vault (Etherscan-
+labeled "Flux Finance: fOUSG Token"), a lending protocol that accepts OUSG as
+collateral. One contract standing in for an unknown number of Flux depositors
+-- exactly the aggregation this package's holder-based metrics cannot see
+through on their own. Several other top-10 holders are Gnosis Safe multisigs
+("Smart Account by Safe" per Etherscan); those are left in, on the reading that
+a multisig is still one economic decision-maker, unlike a pool or vault.
+
+**issuer_addresses is empty, and that is a decision rather than an omission.**
+The distributor-signature search of 2026-08-27 -- which found confirmed issuer
+addresses for CANA and CGT below -- flagged
+0x3d85c41e1a24a970a93436bf6379f53317272d6c for OUSG as its strongest
+candidate: it received a mint from the zero address and then sent to 12
+distinct recipients across 220 sends. It was **not** added, because Etherscan
+carries no label for it and no issuer documentation naming it was found.
+Adding it would reclassify its transfers as primary on the strength of
+behaviour alone, which is exactly the unverified editorial judgement this file
+exists to keep out of published numbers.
+
+Bound on what that leaves open, so the gap is sized rather than merely
+admitted: of OUSG's 50 transfers in the measured window, 3 involve this
+address and 14 were already caught as zero-address mints. The maximum possible
+misclassification traceable to this candidate is therefore 3 transfers out of
+50.
+"""
+
+[[asset]]
+uid = "ethereum:0x01995a697752266d8e748738aaa3f06464b8350b"  # CANA
+excluded_contracts = [
+    "0x151f7c3fB28Bc6f858d67a5e298B7b4f57592b54", # Uniswap V2: CANA-AJNA
+    "0x000000000004444c5dc75cB358380D2e3dE08A90", # Uniswap V4: Pool Manager
+]
+issuer_addresses = [
+    "0xccadea5cc24204995a98daa056c37bd5207fd0c5", # Etherscan: "Maseer: Deployer"
+]
+notes = """
+Issuer address added 2026-08-27. Found by querying for the distributor
+signature -- an address that took delivery of a mint from the zero address and
+then sent onward to many distinct recipients -- and confirmed by Etherscan's
+own label, "Maseer: Deployer", rather than inferred from behaviour alone. It
+sent to 113 distinct recipients across 133 sends, against a holder base of
+roughly 222, so it is functioning as the issuer's distribution address whatever
+the label's wording. Quantified impact: 146 of CANA's 6,157 lifetime transfers
+involve it; 11 of the 1,885 inside the six-window trend span (0.6%), with its
+last activity on 2026-06-09. The published 30-day window figures contain
+**zero** transfers involving it, so those numbers do not move -- this entry
+changes the trend series slightly and future windows, not the headline.
+
+On the holder side, this is the only registry asset with confirmed public DEX
+liquidity: both a CANA-specific Uniswap V2 pool and Uniswap V4's global Pool
+Manager singleton appear in the top 12 holders, both Etherscan-labeled. The V4
+Pool Manager address is not CANA-specific -- it is the one contract that
+custodies every V4 pool's reserves across all tokens -- so excluding it removes
+CANA's V4 liquidity from the holder count without implying that contract is
+"about" CANA in any other sense. A Base-chain bridge contract also appears in
+the top holders (CANA bridged off Ethereum L1); it is deliberately left in,
+since this package only measures L1 and a bridge is not a DeFi aggregation
+contract in the same sense a pool or vault is -- it is disclosed here, not
+excluded.
+"""
+
+[[asset]]
+uid = "ethereum:0x59d9356e565ab3a36dd77763fc0d87feaf85508c"  # USDM
+excluded_contracts = [
+    "0x57F5E098CaD7A3D1Eed53991D4d66C45C9AF7812", # Mountain Protocol: wUSDM Token
+]
+issuer_addresses = []
+notes = """
+Rank-1 holder is Mountain Protocol's own wUSDM wrapper contract (the
+non-rebasing wrapper for USDM), Etherscan-labeled. Same aggregation problem as
+OUSG's Flux vault: one contract standing in for however many wUSDM holders
+exist, who are invisible to this package since it only tracks the underlying
+USDM ledger. See also the rebasing reconciliation gap already documented for
+this asset in docs/data-sources.md -- USDM has two independent reasons its
+raw holder-balance figures need care.
+"""
+
+[[asset]]
+uid = "ethereum:0xf5238462e7235c7b62811567e63dd17d12c2eaa0"  # CGT
+excluded_contracts = []
+issuer_addresses = [
+    "0x6522b05fe48d274f14559e0391be3675e6a1ac91", # Etherscan: "CACHE Gold: Old Backed Treasury"
+]
+notes = """
+Added 2026-08-27 by the same distributor-signature search that found CANA's.
+Etherscan labels this address "CACHE Gold: Old Backed Treasury" -- the word
+treasury is the label's, not an inference from behaviour. It sent to 14
+distinct recipients across 39 sends, and 93 of CGT's 10,202 lifetime transfers
+involve it.
+
+Its impact on anything reported here is **nil**, and that is worth stating
+rather than leaving implicit: its last activity was 2021-10-30, roughly five
+years before the measurement window, and zero of the three transfers in the
+six-window trend span involve it. The "Old" in the label appears to be
+accurate. It is recorded because a treasury that is dormant now is not
+guaranteed to stay dormant, and because leaving a confirmed issuer address out
+of the file would misrepresent what has been checked.
+
+No excluded_contracts: CGT's holder list was not examined for DeFi-aggregation
+contracts, so this asset is unchecked on that axis rather than checked clean.
+"""
+

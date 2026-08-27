@@ -167,7 +167,9 @@ def _collect_live(
     from rwa_liquidity.sources import (  # noqa: PLC0415
         DeFiLlamaPricesSource,
         EvmRpcSource,
+        issuer_addresses,
         load_defillama_registry,
+        load_known_addresses,
     )
 
     assets = [entry.ref for entry in load_defillama_registry()]
@@ -180,7 +182,11 @@ def _collect_live(
         f"one is slow."
     )
 
-    sources: list[Source] = [EvmRpcSource(), DeFiLlamaPricesSource()]
+    known = load_known_addresses()
+    sources: list[Source] = [
+        EvmRpcSource(issuer_addresses=issuer_addresses(known)),
+        DeFiLlamaPricesSource(),
+    ]
     try:
         result = collect(sources, assets, window=period, refresh=refresh)
     finally:
@@ -213,7 +219,9 @@ def _collect_history(
     from rwa_liquidity.sources import (  # noqa: PLC0415
         EvmRpcSource,
         SourceError,
+        issuer_addresses,
         load_defillama_registry,
+        load_known_addresses,
     )
 
     ends = [period.end for period in periods]
@@ -228,7 +236,7 @@ def _collect_history(
     holders: list[pl.DataFrame] = []
     unmeasured: set[str] = set()
 
-    source = EvmRpcSource()
+    source = EvmRpcSource(issuer_addresses=issuer_addresses(load_known_addresses()))
     try:
         for entry in entries:
             try:
@@ -306,6 +314,11 @@ def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
         window = Window.ending(datetime.now(UTC), days=days)
         snapshots, transfers, holders, unmeasured = _collect_live(window, refresh=refresh)
 
+    from rwa_liquidity.sources import (  # noqa: PLC0415 -- keeps `--version` fast
+        excluded_contracts,
+        load_known_addresses,
+    )
+
     reports = build_report(
         snapshots,
         transfers,
@@ -314,6 +327,7 @@ def report(  # noqa: PLR0913 -- each option changes what the numbers mean and
         mode=mode,
         denomination=denomination,
         top_n=top_n,
+        exclude=excluded_contracts(load_known_addresses()),
         unmeasured=unmeasured,
     )
 
@@ -370,6 +384,11 @@ def trend(  # noqa: PLR0913 -- window geometry, which metric, which mode, cache
         )
         raise typer.Exit(code=2)
 
+    from rwa_liquidity.sources import (  # noqa: PLC0415 -- keeps `--version` fast
+        excluded_contracts,
+        load_known_addresses,
+    )
+
     periods_of = windows_ending(datetime.now(UTC), days=days, periods=periods)
     snapshots, transfers, holders, unmeasured = _collect_history(periods_of, refresh=refresh)
     trends = build_trend(
@@ -379,6 +398,7 @@ def trend(  # noqa: PLR0913 -- window geometry, which metric, which mode, cache
         windows=periods_of,
         metric=metric,
         mode=mode,
+        exclude=excluded_contracts(load_known_addresses()),
         unmeasured=unmeasured,
     )
 

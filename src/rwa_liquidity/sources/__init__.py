@@ -33,6 +33,13 @@ from rwa_liquidity.sources.evm_rpc import (
     IssuanceProfile,
 )
 from rwa_liquidity.sources.http import CachedJSONClient, JSONResponse
+from rwa_liquidity.sources.known_addresses import (
+    KnownAddressesEntry,
+    KnownAddressesError,
+    excluded_contracts,
+    issuer_addresses,
+    load_known_addresses,
+)
 from rwa_liquidity.sources.registry import (
     RegistryEntry,
     RegistryError,
@@ -53,6 +60,8 @@ __all__ = [
     "EvmRpcSource",
     "IssuanceProfile",
     "JSONResponse",
+    "KnownAddressesEntry",
+    "KnownAddressesError",
     "RegistryEntry",
     "RegistryError",
     "RwaXyzSource",
@@ -62,5 +71,8 @@ __all__ = [
     "SourceTransportError",
     "UnsupportedCapabilityError",
     "classify_transfers",
+    "excluded_contracts",
+    "issuer_addresses",
     "load_defillama_registry",
+    "load_known_addresses",
 ]
