@@ -14,7 +14,45 @@ defensible in conversation months from now.
 
 ---
 
-## 2026-08-31 -- a self-review of the two previous fixes found four more real issues, closed three
+## 2026-09-01 -- Alchemy's free tier caps `eth_getLogs` at a 10-block range; reverted `EVM_RPC_URL` to the public endpoint
+
+**Decided:** a BUIDL scan against a newly-created Alchemy API key failed 40/40
+times over roughly two hours, always with the adapter's own "is refusing
+eth_getLogs as unavailable" message -- the code path that fires when the node
+answers `-32603` (JSON-RPC's generic internal-error code, which this class of
+endpoint reuses to mean "you're asking for too much"). The failure looked
+identical to ordinary rate-limit contention, which is what the earlier
+`rpc.mevblocker.io` failures had been, so it was assumed to be the same thing
+happening on a new host. It was not.
+
+A direct `eth_getLogs` call against the Alchemy endpoint, outside the package,
+returned:
+
+> "Under the Free tier plan, you can make eth_getLogs requests with up to a 10
+> block range. [...] Upgrade to PAYG for expanded block range."
+
+`_SPAN_LIMIT` (`evm_rpc.py`) parses a node's stated cap from messages shaped
+like "range N exceeds limit of 10000" -- this message doesn't match that
+pattern (it says "up to a 10 block range", not "limit of 10"), so the adapter
+falls back to its binary-search discovery instead of reading the cap directly.
+That discovery correctly converges on a ~10-block step, which is disastrous
+for this package's access pattern: a full-history walk of a token with a few
+million blocks of life needs on the order of hundreds of thousands of
+requests at a 10-block step, so the scan hits `DEFAULT_MAX_LOG_REQUESTS`
+(20,000) or the endpoint's own throttling (the `-32603` loop above) long
+before finishing, regardless of how patiently it retries. This is not a rate
+limit that clears with a pause; it is a hard ceiling that makes the free
+Alchemy tier structurally unable to serve this package's dominant query
+shape. The same direct call against `rpc.mevblocker.io` for the same 10,000
+block range returned real log data immediately.
+
+**Reverted:** `.env`'s `EVM_RPC_URL` back to `rpc.mevblocker.io`. The paid-tier
+upgrade this would need is Alchemy's PAYG plan, not the free key that was
+provisioned -- a cost/signup decision left to the user rather than made here.
+The local cache-directory bloat found on 2026-08-31 (`.rwa-cache/evm_rpc/eth_getLogs/`
+at 117k+ files) is a separate, still-open problem: it degrades every scan's
+wall-clock time on Windows regardless of which RPC endpoint answers it, and
+was not touched by this change.
 
 **Decided:** reviewing the 2026-08-27/28 fixes below under `/code-review`
 turned up eight candidate findings. Three were fixed here; the rest were

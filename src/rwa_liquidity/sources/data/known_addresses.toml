@@ -131,3 +131,129 @@ No excluded_contracts: CGT's holder list was not examined for DeFi-aggregation
 contracts, so this asset is unchecked on that axis rather than checked clean.
 """
 
+# ---------------------------------------------------------------------------
+# Added 2026-08-31, checking the five assets from the second registry pass
+# (defillama.toml's 2026-08-27 addition) against Etherscan's holder labels for
+# the first time -- these went into the registry on-chain-verified but were
+# never audited for DeFi-aggregation holders the way the original four were.
+# ---------------------------------------------------------------------------
+
+[[asset]]
+uid = "ethereum:0x136471a34f6ef19fe571effc1ca711fdb8e49f2b"  # USYC
+excluded_contracts = [
+    "0xdd82875f0840aad58a455a70b88eed9f59cec7c7", # Etherscan: "Usual: Treasury"
+]
+issuer_addresses = []
+notes = """
+Rank-1 holder at ~46.5% of supply (23.5M of ~50.6M USYC) is "Usual: Treasury"
+(a Safe-singleton proxy), Etherscan-labeled. Confirmed via Usual's own
+documentation (docs.usual.money, checked 2026-08-31) rather than the label
+alone: USYC is USD0's primary RWA collateral, held by Usual's DaoCollateral
+mechanism to back USD0 1:1. This is the same aggregation pattern as OUSG's
+Flux vault, at larger scale and one step more consequential -- the address
+does not just pool depositors of a lending market, it backs an entire
+stablecoin's circulating supply.
+
+Quantified impact (30-day window ending 2026-09-01, isolated on identical
+cached data, exclude toggled with everything else held fixed): top-10 holder
+share 99.997% → 68.254%, HHI 2,507.0 → 1,499.3. Dormancy is unchanged
+(61.176% either way): the Treasury address is in continuous use backing
+DaoCollateral, so it was never counted among the dormant addresses to begin
+with -- excluding it moves concentration, not dormancy.
+
+Rank 3 is "Deribit 16" (an exchange address) and rank 1's implementation is a
+Gnosis Safe; neither is excluded -- an exchange's own balance sheet and a
+single multisig are each one economic entity under the same reading applied
+to OUSG's Safe-held holders, not a pooling contract. issuer_addresses is
+empty: no distributor-signature search has been run for USYC yet.
+"""
+
+[[asset]]
+uid = "ethereum:0x43415eb6ff9db7e26a15b704e7a3edce97d31c4e"  # USTB
+excluded_contracts = [
+    "0x569d7dccbf6923350521ecbc28a555a500c4f0ec", # Etherscan: "Midas: Instant Redemption Vault"
+]
+issuer_addresses = []
+notes = """
+Rank-3 holder at ~11.2% of supply (6.29M of ~56.2M USTB) is "Midas: Instant
+Redemption Vault" (a proxy contract), Etherscan-labeled. Midas is the issuer
+of mTBILL, also in this registry; the vault holds USTB as the liquidity
+backing that lets mTBILL holders redeem instantly rather than waiting on the
+underlying fund's own redemption cycle -- the same many-holders-behind-one-
+balance pattern as OUSG's Flux vault and USYC's Usual Treasury, one token
+removed (USTB backs mTBILL's redemptions rather than being redeemed itself).
+
+Quantified impact (30-day window ending 2026-09-01, isolated on identical
+cached data, exclude toggled with everything else held fixed): top-10 holder
+share 84.643% → 75.612%, HHI 1,056.7 → 934.0. Dormancy is unchanged (38.764%
+either way), for the same reason as USYC's Treasury: the redemption vault is
+actively used, not dormant, so excluding it does not move that figure.
+
+Rank 5, "BitGo 1 Exchange", is left in for the same reason Deribit is left in
+for USYC: a custodian's own balance is one economic entity under this
+project's existing convention, not a pooling contract, absent evidence
+otherwise. issuer_addresses is empty: no distributor-signature search has
+been run for USTB yet.
+"""
+
+[[asset]]
+uid = "ethereum:0xdd629e5241cbc5919847783e6c96b2de4754e438"  # mTBILL
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+Checked 2026-08-31, nothing to flag. Rank-1 holder ("pension-usdt.eth", ~30%
+of supply) is ENS-named but carries no Etherscan contract label and no
+"Contract" tag -- a large individual or institutional wallet, not a confirmed
+aggregation point, so it is left in on the same basis Gnosis Safe holders are
+left in elsewhere in this file. No DeFi vault or pool appears in the top ten
+holders. Not a distributor-signature search -- only the holder-label check.
+"""
+
+[[asset]]
+uid = "ethereum:0xdd50c053c096cb04a3e3362e2b622529ec5f2e8a"  # TBILL
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+Checked 2026-08-31, nothing to flag. No Etherscan label appears anywhere in
+the top ten holders -- no contract, no exchange, no ENS name. The cleanest
+holder list in the registry by this measure. Not a distributor-signature
+search -- only the holder-label check.
+"""
+
+[[asset]]
+uid = "ethereum:0x530824da86689c9c17cdc2871ff29b058345b44a"  # STBT
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+Checked 2026-08-31. Rank-1 holder, 0xD9C7daF04da823ec604Ab88469DF0b6F4e4faC5b,
+holds **~96% of STBT's entire supply** (23.3M of ~24.3M) -- consistent with,
+and the direct explanation for, this asset's HHI of 9,369 in docs/findings.md
+(near the 10,000 maximum). It carries no Etherscan name tag, but its
+transaction history is unambiguous: an EOA (not a contract), "Funded By
+Matrixport 5", whose only counterparty across its visible history is
+"Matrixdock: STBT Token" -- Matrixdock being STBT's own issuer. Read together,
+this is very likely Matrixdock's own institutional distribution wallet.
+
+**Not confirmed as an issuer address, and deliberately left unconfigured.**
+The distributor-signature check (mint from 0x0, then fan out) that confirmed
+CANA's and CGT's issuer addresses does **not** confirm this one: queried via
+Dune 2026-08-31, this address shows `mints_received = 0` -- every unit it
+holds arrived via an ordinary transfer, not directly from the zero address --
+while it has sent to 10 distinct recipients across 19 sends between
+2023-09-26 and 2026-08-28 (3 days before this check). Since token conservation
+means its balance must trace back to a real mint somewhere upstream, the
+zero-address rule not firing here does not mean the address isn't an issuer
+distributor; it means the mint-then-fan-out signature this file's search
+relies on cannot see through an intermediate hop. Configuring it as an issuer
+on circumstantial evidence (funding source, exclusive counterparty, no
+contract code) alone would repeat exactly the error OUSG's rejected candidate
+was kept out for. Left as a documented, unresolved risk instead: STBT's
+extreme concentration figure is not an artifact needing correction (whoever
+controls this address does appear to economically control ~96% of supply),
+but whether transfers into or out of it since 2023 should have been
+classified as primary is unresolved and unbounded here, unlike OUSG's
+rejected candidate, which came with a 3-of-50 bound. Also not excluded from
+`excluded_contracts`: it is an EOA, not a contract, so it does not fit that
+mechanism's rationale either way.
+"""
+
