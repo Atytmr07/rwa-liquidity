@@ -62,7 +62,16 @@ class CorruptCacheEntryError(Exception):
     """A cache file exists but cannot be read as an entry this package wrote."""
 
 
-def _replace_atomically(temporary: Path, path: Path) -> None:
+#: Windows error codes that mean "another handle has this file open" rather
+#: than a real permission problem. 5 is access-denied, the one Python maps to
+#: `PermissionError` on its own; 32 is a sharing violation, which does not
+#: always arrive as `PermissionError` -- some antivirus/indexer interference
+#: surfaces it as a plain `OSError` instead. Both are worth retrying; nothing
+#: else is.
+_WINDOWS_SHARING_ERRORS: Final = frozenset({5, 32})
+
+
+def _replace_atomically(temporary: Path, path: Path) -> bool:
     """Rename `temporary` onto `path`, tolerating a lost race on Windows.
 
     POSIX lets a rename replace a file that another process has open, so two
@@ -79,24 +88,39 @@ def _replace_atomically(temporary: Path, path: Path) -> None:
     process is the one that created it.
 
     A short retry loop clears the common case, where the holder is a reader that
-    finishes in milliseconds. If the destination exists after that, the write is
-    treated as satisfied by whoever won. Only a failure with no file in place is
-    re-raised -- that is a read-only directory or a scanner holding the whole
-    tree, which is a real problem and not a race.
+    finishes in milliseconds -- contention here is held for the length of one
+    file read, not a growing amount of work, so the backoff is flat rather than
+    increasing. If the destination exists after that, the write is treated as
+    satisfied by whoever won. Only a failure with no file in place is re-raised
+    -- that is a read-only directory or a scanner holding the whole tree, which
+    is a real problem and not a race.
+
+    Returns:
+        `True` if this call's own write is what is now on disk at `path`,
+        `False` if it lost the race and accepted someone else's write instead.
+        A caller that reports what got persisted needs to know which one it
+        was for; it is never itself `path`'s content.
     """
     for attempt in range(_REPLACE_ATTEMPTS):
         try:
             temporary.replace(path)
-        except PermissionError:
+        except OSError as error:
+            transient = isinstance(error, PermissionError) or (
+                getattr(error, "winerror", None) in _WINDOWS_SHARING_ERRORS
+            )
+            if not transient:
+                raise
             if attempt < _REPLACE_ATTEMPTS - 1:
-                time.sleep(_REPLACE_BACKOFF_SECONDS * (attempt + 1))
+                time.sleep(_REPLACE_BACKOFF_SECONDS)
                 continue
             if not path.exists():
                 raise
             # Someone else wrote this key while we were working. Their copy
             # answers the same request, so ours is redundant.
             temporary.unlink(missing_ok=True)
-        return
+            return False
+        return True
+    return True  # pragma: no cover -- unreachable, _REPLACE_ATTEMPTS is >= 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,7 +249,12 @@ class ParquetCache:
             retrieved_at: When the provider was asked. Defaults to now.
 
         Returns:
-            The entry as written.
+            The entry now on disk at this key. Ordinarily that is `frame`
+            unchanged, but if a concurrent writer won the rename race (see
+            `_replace_atomically`), it is whatever *they* wrote instead --
+            answering the same query, but not necessarily byte-for-byte what
+            this call was given. A caller that inspects the return value sees
+            what is actually cached, not just what it asked to store.
 
         Raises:
             ValueError: If `retrieved_at` is timezone-naive. An unlabelled
@@ -258,12 +287,17 @@ class ParquetCache:
         temporary = path.with_name(f".{path.stem}-{uuid4().hex}.tmp")
         try:
             pq.write_table(table, temporary, compression="zstd")
-            _replace_atomically(temporary, path)
+            wrote = _replace_atomically(temporary, path)
         except BaseException:
             temporary.unlink(missing_ok=True)
             raise
 
-        return CacheEntry(key=key, frame=frame, retrieved_at=moment, path=path)
+        if wrote:
+            return CacheEntry(key=key, frame=frame, retrieved_at=moment, path=path)
+        # Lost the race: `path` holds someone else's write, not this call's
+        # `frame`. Read back what is actually there rather than claiming the
+        # data this call never persisted.
+        return self._read(key, path)
 
     def clear(self, *, source: str | None = None) -> int:
         """Delete cached entries and return how many files were removed.

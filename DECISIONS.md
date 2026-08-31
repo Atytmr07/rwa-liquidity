@@ -14,6 +14,74 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-08-31 -- a self-review of the two previous fixes found four more real issues, closed three
+
+**Decided:** reviewing the 2026-08-27/28 fixes below under `/code-review`
+turned up eight candidate findings. Three were fixed here; the rest were
+judged, not ignored -- each has a stated reason for the call.
+
+**Fixed:**
+
+1. `ParquetCache.put()` returned `CacheEntry(frame=frame, ...)` built from the
+   caller's own argument even on the branch where `_replace_atomically` lost
+   the race and a *different* process's write is what is actually on disk --
+   contradicting the method's own "Returns: the entry as written" contract.
+   `_replace_atomically` now returns whether its own write is the one that
+   landed; `put()` reads the entry back from disk (`self._read`) when it
+   is not. Regression test added and confirmed to fail against the prior code
+   (`test_losing_a_write_race_returns_the_winners_entry_not_the_losers`).
+2. `_replace_atomically` caught only `PermissionError`. Windows sharing
+   violations (`WinError 32`) do not always arrive wrapped as
+   `PermissionError` -- some antivirus/indexer interference surfaces them as a
+   plain `OSError` -- so a real, retryable lock could have propagated straight
+   through the retry loop and reproduced the original crash for a narrower
+   class of contention than intended. Broadened to catch `OSError` and check
+   `winerror` against the two known-transient codes (5, 32); anything else
+   still raises immediately.
+3. `_collect_history`'s `merge()` closure in `cli.py` reimplemented
+   `pipeline.py`'s existing `_empty()`/`_concat()` helpers line for line.
+   Replaced with a direct import of `pipeline._concat`. `_collect_live`
+   already goes through `pipeline.collect()`, which uses the same helpers, so
+   this also removes a place the two callers' empty-frame handling could have
+   quietly drifted apart.
+
+**Judged real but left as documented, deliberate behavior:**
+
+4. `_collect_history` wraps `supply_snapshots`, `holder_snapshots`, and
+   `fetch_transfers` in one `try/except` per asset, so a `fetch_transfers`
+   failure after the other two succeed discards their already-fetched frames
+   and marks the asset fully unmeasured. Splitting this into one `try/except`
+   per call was considered and rejected: it would let an asset keep a
+   transfer-less frame that reads as "measured, zero activity" to every
+   downstream metric -- exactly the empty-frame-means-inactive conflation
+   `pipeline.collect()`'s own docstring warns against, and the failure mode
+   this package's `secondary_only` default and undefined-rather-than-zero
+   metrics exist to avoid. The current behavior wastes a fetch on partial
+   failure; the alternative risks manufacturing a liquidity finding from an
+   outage. Kept the safer direction and added a comment explaining why the
+   grouping is deliberate, not an oversight.
+5. A TOCTOU window remains between `_replace_atomically`'s final failed
+   `replace()` and its `path.exists()` check: a concurrent `ParquetCache.
+   clear()` in that gap could make a genuine lost race look like a hard
+   failure. Not fixed, for the same reason a lock file was rejected in the
+   2026-08-28 entry below -- closing it fully needs OS-level locking, which is
+   more machinery than the actual cost (one spurious exception, on a
+   `clear()`-during-a-live-scan sequence nothing in this codebase does) is
+   worth addressing again for.
+
+Also simplified while in the area: `_replace_atomically`'s retry backoff was
+linear (`0.05s * (attempt + 1)`) with no stated reason for the growth, against
+a docstring that describes the contention as uniform, millisecond-scale.
+Flattened to a constant delay, which the same rationale already justified.
+
+**A ninth issue, found by the same review round but in a different function
+(`build_report`), is recorded separately** -- see 2026-08-27's
+`known_addresses.toml` entry's sibling fix in `metrics/report.py`, committed
+as `2b304a6`: it named zero assets rather than every asset during a total
+outage, the opposite of what the `merge()` fix above was written to achieve.
+
+---
+
 ## 2026-08-28 -- losing a cache write race is not an error, because entries are content-addressed
 
 **Decided:** `ParquetCache.put` retries a refused rename a few times and then,

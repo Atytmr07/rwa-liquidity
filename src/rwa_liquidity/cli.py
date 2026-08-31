@@ -216,12 +216,12 @@ def _collect_history(
     One scan per asset serves every window: the on-chain adapter walks the full
     history anyway, so a window a year old costs no extra requests.
     """
+    from rwa_liquidity.pipeline import _concat  # noqa: PLC0415
     from rwa_liquidity.schema.frames import (  # noqa: PLC0415
         AssetSnapshot,
         HolderBalance,
         TransferEvent,
     )
-    from rwa_liquidity.schema.validation import polars_schema  # noqa: PLC0415
     from rwa_liquidity.sources import (  # noqa: PLC0415
         EvmRpcSource,
         SourceError,
@@ -245,6 +245,15 @@ def _collect_history(
     source = EvmRpcSource(issuer_addresses=issuer_addresses(load_known_addresses()))
     try:
         for entry in entries:
+            # Deliberately one try/except around all three calls, not one per
+            # call. Splitting them would let an asset keep a snapshot or a
+            # holder frame while its transfers failed -- and an empty transfer
+            # frame reads as "did not trade" to every metric downstream, which
+            # is the exact conflation this package exists to prevent (see
+            # pipeline.py's own docstring). All-or-nothing costs a discarded
+            # fetch on a partial failure; the alternative risks manufacturing
+            # a liquidity finding from an outage. The safer failure direction
+            # is worth the waste.
             try:
                 snapshots.append(source.supply_snapshots(entry.ref, ends, refresh=refresh))
                 holders.append(source.holder_snapshots(entry.ref, ends, refresh=refresh))
@@ -259,23 +268,11 @@ def _collect_history(
     finally:
         source.close()
 
-    def merge(frames: list[pl.DataFrame], model: type) -> pl.DataFrame:
-        # `frames` is empty when *every* asset raised, which a bad enough
-        # network makes routine. Falling back to frames[0] then raises
-        # IndexError from inside a command whose whole job is to report which
-        # assets it could not reach -- the one failure it must survive. An
-        # empty frame carrying the right schema keeps the failure legible:
-        # every asset lands in `unmeasured` and is reported as such.
-        populated = [frame for frame in frames if not frame.is_empty()]
-        if populated:
-            return pl.concat(populated)
-        return pl.DataFrame(schema=dict(polars_schema(model)))
-
     console.print()
     return (
-        merge(snapshots, AssetSnapshot),
-        merge(transfers, TransferEvent),
-        merge(holders, HolderBalance),
+        _concat(snapshots, AssetSnapshot),
+        _concat(transfers, TransferEvent),
+        _concat(holders, HolderBalance),
         frozenset(unmeasured),
     )
 

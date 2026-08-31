@@ -347,7 +347,10 @@ def test_history_collection_survives_every_asset_failing(
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr(cli_module, "EvmRpcSource", AlwaysFails, raising=False)
+    # _collect_history imports EvmRpcSource locally (`from rwa_liquidity.sources
+    # import EvmRpcSource`), so only the name it actually resolves at call time
+    # needs patching. cli_module.EvmRpcSource is never an attribute the running
+    # code reads -- patching it too would silently be a no-op.
     monkeypatch.setattr("rwa_liquidity.sources.EvmRpcSource", AlwaysFails, raising=False)
 
     periods = [Window.ending(datetime(2026, 7, 30, tzinfo=UTC), days=30)]

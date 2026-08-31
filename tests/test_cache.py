@@ -133,6 +133,27 @@ def test_losing_a_concurrent_write_race_is_not_an_error(
     assert [p.name for p in cache_root.rglob("*") if p.suffix != ".parquet" and p.is_file()] == []
 
 
+def test_losing_a_write_race_returns_the_winners_entry_not_the_losers(
+    cache_root: Path, snapshots: pl.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # put()'s docstring promises the entry now on disk, not just an echo of
+    # what the caller passed in. On a lost race those are different values --
+    # this pins the return value itself, which the test above never checks
+    # (it only reads back via a separate cache.get() call afterward).
+    cache = ParquetCache(cache_root)
+    winner = cache.put(KEY, snapshots, retrieved_at=NOW)
+
+    def refuse(*_args: object, **_kwargs: object) -> Path:
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(Path, "replace", refuse)
+    loser_frame = snapshots.with_columns(total_supply=pl.lit(2.0))
+    returned = cache.put(KEY, loser_frame, retrieved_at=NOW)
+
+    assert returned.frame["total_supply"].item() == winner.frame["total_supply"].item()
+    assert returned.frame["total_supply"].item() != loser_frame["total_supply"].item()
+
+
 def test_a_refused_rename_with_no_file_in_place_still_raises(
     cache_root: Path, snapshots: pl.DataFrame, monkeypatch: pytest.MonkeyPatch
 ) -> None:
