@@ -22,7 +22,9 @@ from rwa_liquidity.demo import DEMO_LABEL, DemoDataUnavailableError, load_demo_d
 from rwa_liquidity.export import to_latex, write_frame
 from rwa_liquidity.metrics.base import Window
 from rwa_liquidity.metrics.report import METRIC_COLUMNS, build_report, report_frame
+from rwa_liquidity.schema.frames import AssetSnapshot, HolderBalance, TransferEvent
 from rwa_liquidity.schema.types import VolumeMode
+from rwa_liquidity.schema.validation import polars_schema
 from rwa_liquidity.sources import SourceError
 
 runner = CliRunner()
@@ -360,6 +362,33 @@ def test_history_collection_survives_every_asset_failing(
     assert "balance" in holders.columns
     # Every asset is named as unmeasured, which is the actual finding.
     assert len(unmeasured) > 0
+
+
+def test_report_names_unmeasured_assets_even_when_snapshots_is_empty() -> None:
+    # The gap the test above doesn't close: build_report used to drive its
+    # loop off snapshots["asset_uid"].unique() alone, so on the exact "every
+    # fetch failed" outcome _collect_history now survives, snapshots is empty
+    # and the unmeasured set was never consulted -- report()/trend() rendered
+    # a silently empty table instead of naming what could not be reached. The
+    # fallback frame in cli.py's merge() was fixed to stop the crash before
+    # this was caught; this is the report-layer half of the same bug.
+    empty_snapshots = pl.DataFrame(schema=dict(polars_schema(AssetSnapshot)))
+    empty_transfers = pl.DataFrame(schema=dict(polars_schema(TransferEvent)))
+    empty_holders = pl.DataFrame(schema=dict(polars_schema(HolderBalance)))
+    window = Window.ending(datetime(2026, 7, 30, tzinfo=UTC), days=30)
+
+    reports = build_report(
+        empty_snapshots,
+        empty_transfers,
+        empty_holders,
+        window=window,
+        unmeasured=["ethereum:0xdead", "ethereum:0xbeef"],
+    )
+
+    assert {r.asset_uid for r in reports} == {"ethereum:0xdead", "ethereum:0xbeef"}
+    for report in reports:
+        assert report.metrics == {}
+        assert "could not be fetched" in report.notes[0]
 
 
 def test_trend_and_issuance_are_documented_in_the_help() -> None:

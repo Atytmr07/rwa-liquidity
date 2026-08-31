@@ -116,11 +116,15 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
     exclude: Collection[str] = (),
     unmeasured: Collection[str] = (),
 ) -> list[AssetReport]:
-    """Compute every metric for every asset present in `snapshots`.
+    """Compute every metric for every asset present in `snapshots` or `unmeasured`.
 
     An asset with no transfers or no holder rows still gets a row: the metrics
     that cannot be computed report themselves undefined, which is information.
-    Dropping the asset would hide it.
+    Dropping the asset would hide it. The same is true of an asset absent from
+    `snapshots` altogether -- a caller that lost every fetch for it (a total
+    outage, say) still owes it a row, or the report silently shrinks to
+    whatever fraction of the registry happened to answer, with nothing to
+    signal that the rest went missing.
 
     Args:
         snapshots: An `AssetSnapshot` frame, possibly spanning several assets.
@@ -134,7 +138,8 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
         unmeasured: Assets whose data could not be fetched. Their metrics are
             left undefined rather than computed from an empty frame, because an
             empty frame otherwise reads as "did not trade" -- a finding this
-            package must not manufacture from a failed request.
+            package must not manufacture from a failed request. Included in
+            the report even when `snapshots` has no rows for them at all.
 
     Returns:
         One report per asset, ordered by asset uid.
@@ -144,7 +149,12 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
     unknown = set(unmeasured)
     reports: list[AssetReport] = []
 
-    for asset_uid in sorted(snapshots["asset_uid"].unique().to_list()):
+    # unknown is unioned in rather than only consulted per-row: an asset
+    # missing from snapshots entirely -- every fetch for it failed -- must
+    # still surface here, or a bad enough outage silently empties the report
+    # instead of naming what it could not reach.
+    known_uids = {str(uid) for uid in snapshots["asset_uid"].unique().to_list()}
+    for asset_uid in sorted(known_uids | unknown):
         asset_snapshots = _for_asset(snapshots, str(asset_uid))
         asset_transfers = _for_asset(transfers, str(asset_uid))
         asset_holders = _for_asset(holders, str(asset_uid))
