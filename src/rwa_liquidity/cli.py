@@ -216,6 +216,12 @@ def _collect_history(
     One scan per asset serves every window: the on-chain adapter walks the full
     history anyway, so a window a year old costs no extra requests.
     """
+    from rwa_liquidity.schema.frames import (  # noqa: PLC0415
+        AssetSnapshot,
+        HolderBalance,
+        TransferEvent,
+    )
+    from rwa_liquidity.schema.validation import polars_schema  # noqa: PLC0415
     from rwa_liquidity.sources import (  # noqa: PLC0415
         EvmRpcSource,
         SourceError,
@@ -253,12 +259,25 @@ def _collect_history(
     finally:
         source.close()
 
-    def merge(frames: list[pl.DataFrame]) -> pl.DataFrame:
+    def merge(frames: list[pl.DataFrame], model: type) -> pl.DataFrame:
+        # `frames` is empty when *every* asset raised, which a bad enough
+        # network makes routine. Falling back to frames[0] then raises
+        # IndexError from inside a command whose whole job is to report which
+        # assets it could not reach -- the one failure it must survive. An
+        # empty frame carrying the right schema keeps the failure legible:
+        # every asset lands in `unmeasured` and is reported as such.
         populated = [frame for frame in frames if not frame.is_empty()]
-        return pl.concat(populated) if populated else frames[0]
+        if populated:
+            return pl.concat(populated)
+        return pl.DataFrame(schema=dict(polars_schema(model)))
 
     console.print()
-    return merge(snapshots), merge(transfers), merge(holders), frozenset(unmeasured)
+    return (
+        merge(snapshots, AssetSnapshot),
+        merge(transfers, TransferEvent),
+        merge(holders, HolderBalance),
+        frozenset(unmeasured),
+    )
 
 
 @app.command()

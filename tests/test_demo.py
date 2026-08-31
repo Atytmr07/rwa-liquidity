@@ -8,6 +8,7 @@ other test still passed.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
@@ -15,11 +16,14 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+import rwa_liquidity.cli as cli_module
 from rwa_liquidity.cli import app
 from rwa_liquidity.demo import DEMO_LABEL, DemoDataUnavailableError, load_demo_dataset
 from rwa_liquidity.export import to_latex, write_frame
+from rwa_liquidity.metrics.base import Window
 from rwa_liquidity.metrics.report import METRIC_COLUMNS, build_report, report_frame
 from rwa_liquidity.schema.types import VolumeMode
+from rwa_liquidity.sources import SourceError
 
 runner = CliRunner()
 
@@ -319,6 +323,43 @@ def test_trend_command_rejects_an_unknown_metric() -> None:
     assert "Unknown metric" in result.output
     # The message has to name the valid choices, or the user is left guessing.
     assert "turnover_ratio" in result.output
+
+
+def test_history_collection_survives_every_asset_failing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A bad enough network makes "every asset raised" routine, and the command
+    # whose job is to report what it could not reach is the last one that may
+    # crash on it. This previously fell through to frames[0] on a list nothing
+    # had been appended to and died with a bare IndexError from inside polars,
+    # which read as a bug in the metrics rather than as an outage.
+    class AlwaysFails:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def _refuse(self, *_args: object, **_kwargs: object) -> pl.DataFrame:
+            raise SourceError("simulated outage")
+
+        supply_snapshots = holder_snapshots = fetch_transfers = _refuse
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(cli_module, "EvmRpcSource", AlwaysFails, raising=False)
+    monkeypatch.setattr("rwa_liquidity.sources.EvmRpcSource", AlwaysFails, raising=False)
+
+    periods = [Window.ending(datetime(2026, 7, 30, tzinfo=UTC), days=30)]
+    snapshots, transfers, holders, unmeasured = cli_module._collect_history(periods, refresh=False)
+
+    # Empty but well-formed, so downstream code reports rather than explodes.
+    assert snapshots.is_empty()
+    assert transfers.is_empty()
+    assert holders.is_empty()
+    assert "asset_uid" in snapshots.columns
+    assert "block_time" in transfers.columns
+    assert "balance" in holders.columns
+    # Every asset is named as unmeasured, which is the actual finding.
+    assert len(unmeasured) > 0
 
 
 def test_trend_and_issuance_are_documented_in_the_help() -> None:
