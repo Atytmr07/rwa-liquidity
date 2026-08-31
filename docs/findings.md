@@ -7,11 +7,20 @@ against a public Ethereum node with **no API key**. Reproducible with:
 uv run rwa-liquidity report --mode secondary_only
 ```
 
-Window: 30 days ending 2026-07-30. Chain: Ethereum mainnet. Source: `evm_rpc`.
+Window: 30 days ending 2026-08-28. Chain: Ethereum mainnet. Source: `evm_rpc`.
 Holder distributions were reconstructed from each token's complete `Transfer`
 history and checked against the contract's own `totalSupply()`; where the two
 agreed the distribution is exact, and where they did not the affected metrics are
 reported as undefined rather than estimated.
+
+**§1 and §2 were regenerated 2026-08-28** over the widened sixteen-asset
+registry, with `known_addresses.toml`'s exclusions in effect. Two things moved
+at once relative to the previous version of those tables -- the exclusions, and
+the window, which slides with the clock -- so a figure that differs from an
+earlier draft is not attributable to either on its own. §5a isolates the
+exclusion effect on a fixed window, and is the section to cite for that. The
+narrative sections below (§3 through §7) discuss the 2026-07-30 measurement and
+say so where a specific number is quoted.
 
 **Re-verified 2026-08-24 for nine of the ten measured assets**, after a rewrite
 of the scanning method (`DECISIONS.md`, 2026-08-14/15 entries) changed how the
@@ -61,33 +70,76 @@ behave alike.
 
 | Asset | Supply | Holders | Transfers | mint | burn | secondary |
 |---|---|---|---|---|---|---|
-| BUIDL | 224,830,404.13 | 59 | 731 | 696 | 3 | **32** |
 | ZTLN | 150,000,000.00 | 2 | 0 | 0 | 0 | **0** |
-| FDIT | 63,287,229.17 | 3 | 28 | 9 | 6 | 13 |
-| OUSG | 1,455,454.62 | 53 | 51 | 15 | 15 | 21 |
-| USDM | 1,276,201.32 | 1,587 | 256 | 0 | 1 | 255 |
+| USTB | 56,167,083.01 | 80 | 2,342 | 209 | 739 | 1,394 |
+| USYC | 50,578,022.33 | 26 | 100 | 41 | 37 | 22 |
+| mTBILL | 66,954,773.22 | 279 | 291 | 54 | 108 | 129 |
+| FDIT | 47,065,431.52 | 2 | 14 | 3 | 4 | 7 |
+| STBT | 24,258,448.70 | 72 | 139 | 3 | 1 | 135 |
+| TBILL | 21,952,320.40 | 32 | 72 | 10 | 24 | 38 |
+| OUSG | 1,326,531.37 | 53 | 30 | 9 | 10 | 11 |
+| USDM | 1,276,201.32 | 1,596 | 123 | 0 | 0 | 123 |
 | RCOIN | 452,082.77 | 25 | 0 | 0 | 0 | **0** |
-| PAXG | 441,941.91 | *not measurable* | | | | |
-| CGT | 100,771.01 | 272 | 3 | 0 | 0 | 3 |
-| CANA | 30,837.42 | 222 | 102 | 0 | 0 | 102 |
+| CGT | 100,771.01 | 273 | 1 | 0 | 0 | 1 |
+| CANA | 30,837.42 | 226 | 124 | 0 | 0 | 124 |
 | ATT | 1,825.32 | 29 | 0 | 0 | 0 | **0** |
-| HLSCOPE | 159.94 | 3 | 2 | 0 | 0 | 2 |
+| HLSCOPE | 159.94 | 3 | 0 | 0 | 0 | **0** |
+| BUIDL | 211,790,799.99 | *endpoint refused the scan* | | | | |
+| PAXG | 429,666.38 | *over the scan ceiling* | | | | |
+
+The two unmeasured rows fail for different reasons and must not be read the
+same way. **PAXG** exceeds the 250,000-log ceiling and is structurally out of
+reach of a keyless scan (§7; measured through a paid source in §7a).
+**BUIDL** is measurable in principle -- it was measured on 2026-07-30 -- and
+was refused on this run by a rate-limited free endpoint. Its supply figure is
+a single `eth_call` and came back fine; only the log replay did not. Its
+2026-07-30 figures (59 holders, 731 transfers, 696 mint / 3 burn / 32
+secondary) are the ones §4 discusses.
 
 ## 2. The metrics
 
 | Asset | turnover `all` | turnover `secondary_only` | overstatement | dormancy | top-10 | HHI |
 |---|---|---|---|---|---|---|
-| BUIDL | 0.2015 | **0.0187** | **10.8x** | 96.2% | 83.6% | 1,618 |
 | ZTLN | 0.0000 | **0.0000** | no secondary market | 100.0% | 100.0% | 5,556 |
-| FDIT | 2.2576 | **1.0767** | 2.1x | 0.0% | 100.0% | 9,362 |
-| OUSG | 0.4203 | **0.1971** | 2.1x | 50.9% | 92.9% | 1,385 |
-| USDM | 0.0022 | **0.0022** | 1.0x | n/a | n/a | 7,929 |
+| USTB | 1.3756 | **0.4094** | 3.4x | 36.9% | 84.2% | 1,067 |
+| USYC | 7.9866 | **0.2048** | **39.0x** | 46.7% | 99.8% | 3,044 |
+| mTBILL | 0.5841 | **0.1346** | 4.3x | 34.2% | 99.6% | 2,052 |
+| FDIT | 0.7078 | **0.3539** | 2.0x | 0.0% | 100.0% | 9,569 |
+| STBT | 0.0149 | **0.0071** | 2.1x | 0.0% | 97.3%* | 9,369* |
+| TBILL | 1.6356 | **0.7828** | 2.1x | 53.8% | 97.6% | 2,542 |
+| OUSG | 0.2983 | **0.1294** | 2.3x | 54.2% | 70.0% | 779 |
+| USDM | 0.0089 | **0.0089** | 1.0x | n/a | n/a | 7,518 |
 | RCOIN | 0.0000 | **0.0000** | no secondary market | 100.0% | 97.1% | 8,348 |
-| PAXG | *not measurable* | | | | | |
-| CGT | 0.0000 | **0.0000** | no secondary market | 100.0% | 99.2% | 9,223 |
-| CANA | 0.0677 | **0.0677** | 1.0x | 82.3% | 99.5% | 2,783 |
+| CGT | 0.0000 | **0.0000** | 1.0x | 100.0% | 99.2% | 9,223 |
+| CANA | 0.0129 | **0.0129** | 1.0x | 97.3% | 98.8% | 2,781 |
 | ATT | 0.0000 | **0.0000** | no secondary market | 100.0% | 99.2% | 6,895 |
-| HLSCOPE | 0.0728 | **0.0728** | 1.0x | 54.9% | 100.0% | 4,724 |
+| HLSCOPE | 0.0000 | **0.0000** | no secondary market | 100.0% | 100.0% | 4,724 |
+| BUIDL | *endpoint refused the scan* | | | | | |
+| PAXG | *over the scan ceiling* | | | | | |
+
+\* STBT's holder metrics carry a reconciliation warning and should not be
+quoted without it: 141 addresses reconstruct to a negative balance and the
+reconstructed total comes to 23,594,247 against a `totalSupply()` of
+24,260,529, a 2.7% shortfall. Unlike USDM the discrepancy is small enough that
+no share exceeds 1, so the impossibility guard does not fire and the figures
+are computed -- but the warning says the distribution is unreliable, and it is
+reported here rather than dropped for tidiness.
+
+**USYC overstates by 39x**, which is not a typo and is now the largest
+correction factor in the dataset by a wide margin -- BUIDL's much-quoted 10.8x
+was measured on a different window and is smaller. USYC moved 7.99 times its
+supply in 30 days under `all` mode; restricted to holder-to-holder trades, 0.20.
+Of its 100 transfers, 78 were mint or burn. A tokenized treasury product whose
+raw on-chain volume reads as eight full turns of supply per month, and whose
+actual secondary trading is a fifth of one turn, is the clearest single example
+in this document of why the split matters.
+
+**The three lowest-HHI assets are all new to the registry or newly corrected**:
+OUSG at 779 (after excluding its lending vault, §5a), USTB at 1,067, and
+mTBILL at 2,052. The 2026-07-30 sample's claim that eight of ten assets exceed
+2,500 does not survive the widened registry unchanged: on this run it is nine
+of fourteen. Concentration remains high in most of the sample, but "almost
+everywhere" is now too strong.
 
 ---
 
@@ -136,12 +188,19 @@ concentrated; the 2023 revision lowered that threshold to 1,800, and puts
 1,000--1,800 at "moderately concentrated" (US DOJ & FTC, *Merger Guidelines*
 SS2.1 (2023), as stated by the
 [DOJ Antitrust Division](https://www.justice.gov/atr/herfindahl-hirschman-index)).
-Of the ten measured assets, **eight exceed 2,500 and six exceed 5,000**; the
-same eight also clear the stricter 1,800 threshold (the two that don't, BUIDL
-at 1,618 and OUSG at 1,385, sit between "moderately" and "highly" concentrated
-under either guideline). Top-10 share is above 92% for nine of them. OUSG's
-1,385 is itself overstated by a DeFi vault this run did not yet exclude -- see
-§5a, where the same figure comes out to 779 once it is.
+On the original ten-asset run, **eight exceeded 2,500 and six exceeded 5,000**,
+and top-10 share was above 92% for nine of them.
+
+**The widened registry weakens this.** On the 2026-08-28 run over fourteen
+measurable assets (§2), nine exceed 2,500 rather than eight of ten, and three
+sit below the stricter 1,800 threshold: OUSG at 779, USTB at 1,067, and --
+just above it -- mTBILL at 2,052. Two of those three are assets the second
+registry pass added, and the third is OUSG only after its lending vault is
+excluded (§5a; the same figure reads 1,385 with the vault counted). The
+direction of the finding holds -- most of these assets are concentrated by any
+antitrust standard -- but "almost everywhere," written when the sample was ten
+assets that happened to share an instrument type, is too strong for a sample
+that includes products with a broader holder base.
 
 Two cases deserve separate mention because they invert the usual reading:
 
@@ -292,86 +351,101 @@ are the ones thin enough to measure exhaustively for free, and the assets that
 visibly trade are the ones that need a paid source to confirm what is already
 visible.
 
-## 7a. Six months, not one snapshot
+## 7b. Six months, not one snapshot
 
 The cross-section above says how liquid these assets were. It cannot say whether
 tokenized markets are deepening, which is the next question. Supply and holder
 distributions are reconstructed from the ledger **at each window's end** rather
 than taken from today, so a fund that has grown does not show a falsely
-collapsing turnover because its denominator moved. BUIDL's supply over the six
-windows was 172m, 169m, 148m, 178m, 187m, 225m -- using the last figure
-throughout would have distorted every earlier ratio.
+collapsing turnover because its denominator moved.
 
 ```bash
 uv run rwa-liquidity trend --metric turnover_ratio
+uv run rwa-liquidity trend --metric top_10_holder_share
 ```
 
-**Secondary turnover**, six consecutive 30-day windows, oldest first:
+**Regenerated 2026-08-31** over the widened sixteen-asset registry, with
+`known_addresses.toml`'s exclusions in effect throughout -- both tables below
+reflect the corrected mechanism from the start, not a before/after comparison.
+Fetched asset by asset with per-asset retries after the full-registry `trend`
+command lost partial runs to a flaky free RPC endpoint several times in a row;
+see `DECISIONS.md` if that recurs. **BUIDL** could not be reached on this run
+(the endpoint refused the scan after 3 attempts) and keeps its last-confirmed
+reading, marked below; **PAXG** is out of reach of this adapter entirely (§7).
 
-| Asset | 03-02 | 04-01 | 05-01 | 05-31 | 06-30 | 07-30 | |
+**Secondary turnover**, six consecutive 30-day windows, oldest first (04-03 to
+08-31):
+
+| Asset | 04-03 | 05-03 | 06-02 | 07-02 | 08-01 | 08-31 | |
 |---|---|---|---|---|---|---|---|
-| ATT | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
-| BUIDL | 0.0384 | 0.0503 | 0.2128 | 0.1145 | 0.0133 | 0.0187 | falling |
-| CANA | 0.0960 | 0.5313 | 0.0176 | 0.1251 | 0.0548 | 0.0669 | falling |
-| CGT | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
-| FDIT | 0.1868 | 0.2121 | 0.4119 | 0.2019 | 0.6238 | 1.0767 | rising |
-| HLSCOPE | 0.0147 | 0.7181 | 0.2839 | 0.1201 | 0.0003 | 0.0728 | rising |
-| OUSG | 0.3141 | 0.6831 | 0.7677 | 0.3345 | 0.8556 | 0.1971 | falling |
+| OUSG | 0.6130 | 0.7647 | 0.3623 | 0.8193 | 0.2197 | 0.1097 | falling |
+| FDIT | 0.2433 | 0.3788 | 0.2628 | 1.1469 | 0.5972 | 0.3539 | rising |
 | RCOIN | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
-| USDM | 0.1067 | 0.0577 | 0.0759 | 0.0131 | 0.0229 | 0.0058 | falling |
+| USDM | 0.0570 | 0.0757 | 0.0132 | 0.0232 | 0.0137 | 0.0280 | falling |
 | ZTLN | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
+| USYC | 5.9147 | 2.1965 | 0.5710 | 3.6417 | 0.5675 | 0.1568 | falling |
+| USTB | 0.3957 | 0.3615 | 0.3535 | 0.4669 | 0.4028 | 0.3765 | flat |
+| mTBILL | 0.0995 | 0.0106 | 0.1560 | 0.2482 | 0.3533 | 0.1077 | flat, volatile |
+| TBILL | 0.3642 | 1.0596 | 0.2051 | 0.6200 | 0.7672 | 0.8965 | rising |
+| STBT | 1.1895 | 0.0014 | 0.3182 | 0.8407 | 0.0227 | 0.0038 | falling |
+| HLSCOPE | 0.7181 | 0.2839 | 0.1201 | 0.0003 | 0.0728 | 0.0000 | falling |
+| CGT | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
+| CANA | 0.0144 | 0.0176 | 0.1297 | 0.0533 | 0.0630 | 0.0918 | rising |
+| ATT | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | flat at zero |
+| BUIDL | 0.0384 | 0.0503 | 0.2128 | 0.1145 | 0.0133 | 0.0187 | *last confirmed 07-30, unconfirmed since* |
+| PAXG | *not measurable by this adapter* | | | | | | |
 
-**Four assets recorded no secondary trading in any of the six windows.** A single
-month of silence could be a quiet month; six is a property of the asset.
+**Four assets recorded no secondary trading in any of the six windows**
+(RCOIN, ZTLN, CGT, ATT). A single month of silence could be a quiet month; six
+is a property of the asset. Of the rest: three rose (FDIT, TBILL, CANA), five
+fell (OUSG, USDM, USYC, STBT, HLSCOPE), and USTB/mTBILL moved without a clear
+direction. Nothing here shows a market deepening in aggregate.
 
-Nothing here shows a market deepening in aggregate. Two of ten rose, four fell,
-four never moved. The single asset with a clear upward series, FDIT, has three
-holders — its rising turnover is three parties trading with each other more often,
-which is not the same as a market forming.
+**Concentration**, same six windows:
 
-**Concentration is the flattest series in the dataset.** Top-10 share moved by
-less than a percentage point over six months for seven of the nine measurable
-assets. Regenerated 2026-08-27 with `known_addresses.toml`'s exclusions in
-effect (§5a):
+| Asset | 04-03 | 05-03 | 06-02 | 07-02 | 08-01 | 08-31 | |
+|---|---|---|---|---|---|---|---|
+| OUSG | 81.6% | 80.6% | 78.6% | 73.5% | 70.7% | 70.1% | **falling** |
+| FDIT | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | flat |
+| RCOIN | 97.3% | 97.1% | 97.1% | 97.1% | 97.1% | 97.1% | flat |
+| USDM | n/a | n/a | n/a | n/a | n/a | n/a | rebasing guard, all windows |
+| ZTLN | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | flat |
+| USYC | 99.5% | 99.7% | 99.1% | 97.3% | 99.4% | 99.8% | flat |
+| USTB | 81.3% | 88.7% | 85.3% | 88.4% | 87.3% | 84.7% | flat |
+| mTBILL | 99.8% | 99.9% | 99.8% | 99.8% | 99.7% | 99.6% | flat |
+| TBILL | 99.4% | 99.4% | 98.8% | 98.6% | 96.7% | 97.7% | flat, drifting down |
+| STBT | n/a | n/a | n/a | n/a | n/a | n/a | reconciliation warning, all windows |
+| HLSCOPE | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | flat |
+| CGT | 99.2% | 99.2% | 99.2% | 99.2% | 99.2% | 99.2% | flat |
+| CANA | 94.7% | 94.6% | 94.6% | 94.8% | 99.2% | 98.4% | **rising** |
+| ATT | 99.2% | 99.2% | 99.2% | 99.2% | 99.2% | 99.2% | flat |
+| BUIDL | 84.1% | 83.6% | 82.8% | 83.7% | 83.6% | 81.8% | *last confirmed 07-30, unconfirmed since* |
+| PAXG | *not measurable by this adapter* | | | | | | |
 
-| Asset | 03-30 | 08-27 | |
-|---|---|---|---|
-| OUSG | 78.4% | 70.0% | **falling** |
-| CANA | 94.7% | 98.8% | flat |
-| RCOIN | 97.3% | 97.1% | flat |
-| CGT | 99.2% | 99.2% | flat |
-| ATT | 99.2% | 99.2% | flat |
-| FDIT / HLSCOPE / ZTLN | 100.0% | 100.0% | flat |
-| USDM | n/a | n/a | rebasing guard, all windows |
-| BUIDL | — | — | endpoint refused the scan on this run |
+**OUSG is the only asset with a clear, sustained direction, and it falls.** A
+previous version of this table -- computed before `known_addresses.toml`'s
+exclusions existed -- reported OUSG *rising*, 82.4% to 92.9%, and called it
+"the one clear mover, and it concentrated." With Flux Finance's fOUSG vault
+excluded, the same series **falls**, and falls from the start: every point in
+this regenerated run is lower than the corresponding point in the uncorrected
+one. The sign of the only non-flat series in the original ten-asset dataset was
+an artifact of counting a lending vault as a single large holder. §5a isolates
+this precisely -- holding one window fixed and toggling only the exclusion
+moves OUSG's top-10 share by 24 points, far more than a window shift alone
+could produce -- so the exclusion, not measurement noise, is the cause. Read
+correctly, OUSG was deconcentrating throughout while the vault's growing
+position made it look like the opposite. That is the strongest single argument
+in this document for why the address-versus-investor problem (§5a) is not a
+footnote: it did not blur a number, it inverted a published finding.
 
-### The direction of the one clear mover reversed
+**CANA rising is new** -- absent from the original ten-asset series, visible
+now that the registry and the window both cover 2026 mid-year activity more
+fully. Its known issuer address (§8) touches none of these six windows'
+transfers, so the rise is not a mint/burn artifact.
 
-The previous version of this table, run before the DeFi-contract exclusions
-existed, reported **OUSG rising from 82.4% to 92.9%** and called it "the one
-clear mover, and it concentrated." With Flux Finance's fOUSG vault excluded,
-OUSG **falls, 78.4% to 70.0%**. The sign of the only non-flat series in the
-dataset was an artifact of counting a lending vault as a single large holder.
-
-Two things changed between the runs — the exclusions, and the windows, which
-slide with the present — so this is not a clean single-variable comparison on
-its own. The isolated test in §5a is: holding the window fixed and toggling
-only the exclusion moved OUSG's top-10 share from 94.2% to 70.0%, a 24-point
-swing, which is far larger than anything the five-week window shift could
-account for. The exclusion is the cause.
-
-Read correctly, OUSG was **deconcentrating** over these six windows while the
-vault's growing position made it look like the opposite. That is the strongest
-single argument in this document for why the address-versus-investor problem
-(§5a) is not a footnote: it did not merely blur a number here, it inverted a
-published finding.
-
-BUIDL could not be re-measured on this run — the free endpoint refused the scan
-partway, the same failure documented at the top of this file — so its previous
-reading (82.3% to 83.6%, flat) stands unconfirmed against the new exclusions.
-BUIDL has no entry in `known_addresses.toml`, so no exclusion applies to it and
-the figure is not expected to move; that is a reason to expect stability, not
-evidence of it.
+BUIDL's series is carried forward from its last successful scan (07-30) rather
+than re-measured; no exclusion in `known_addresses.toml` applies to it, so no
+change is expected, but that is an expectation, not a confirmation.
 
 Nothing else moved. Over six months, on these assets, tokenization did not
 broaden ownership — and the one asset that did broaden it, OUSG, was previously

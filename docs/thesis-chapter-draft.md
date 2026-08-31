@@ -434,6 +434,19 @@ figure wrong by a factor between 1x and 11x depending on the specific asset,
 which by construction cannot be corrected with a single scalar applied
 across the sample.
 
+**The widened registry pushes the upper bound considerably higher.** Measured
+on 2026-08-28 across fourteen assets (`docs/findings.md` §2), Circle's USYC
+returns an overstatement factor of **39.0x** — raw turnover of 7.99 against
+secondary-only turnover of 0.2048. Seventy-eight of its hundred transfers in
+the window were mint or burn. A product whose published on-chain volume reads
+as eight complete turns of supply per month, and whose actual investor-to-
+investor trading is a fifth of one turn, is a starker instance of the same
+mechanism than BUIDL, and it was not visible in the original ten-asset sample.
+The claimed range is therefore **1x to 39x on the observed sample**, and should
+be read as a lower bound on the dispersion rather than as its limit: nothing in
+the method establishes that 39x is extreme for the population, only that it
+occurs.
+
 **On what this result is, and is not, surprising.** That BUIDL exhibits
 almost no secondary trading should not be read as a finding about BUIDL's
 design being defective — it is a regulated, permissioned money-market-fund
@@ -623,20 +636,41 @@ plausible-looking distribution was wrong.
 Eight of the ten measurable assets exceed an HHI of 2,500 (the 2010 DOJ/FTC
 "highly concentrated" threshold); the same eight also clear the stricter
 1,800 threshold introduced in the 2023 revision. Top-10 holder share exceeds
-92% for nine of ten assets. Tracked across six consecutive 30-day windows
+92% for nine of ten assets.
+
+**This is weaker over the widened registry, and the weakening is
+informative.** Re-measured on 2026-08-28 across fourteen assets, nine rather
+than eight of ten exceed 2,500, and three fall below the 1,800 threshold:
+OUSG at 779, Invesco's USTB at 1,067, and mTBILL at 2,052. Two of the three
+were added by the second registry pass (§3.4) and the third is OUSG once its
+lending vault is excluded (§5). The qualitative finding survives — most of
+these assets are concentrated by any antitrust standard — but the original
+sample's near-uniformity was partly an artifact of its composition: ten assets
+that happened to share an instrument type. A tokenized RWA can have a broad
+holder base, as PAXG (§4.5a) shows at the extreme and USTB shows within the
+keyless method's own reach.
+
+Tracked across six consecutive 30-day windows
 (with supply and holder distributions reconstructed at each window's end,
-per §3.5, rather than taken from the present), top-10 concentration moved by
-less than one percentage point for seven of nine measurable assets over six
-months. Secondary turnover over the same six windows shows no aggregate trend:
-two assets rose, four fell, four remained flat at zero in every window. On this
-sample, over six months, tokenization did not measurably broaden ownership.
+per §3.5, rather than taken from the present), and **regenerated 2026-08-31
+over the widened fourteen-asset registry** with `known_addresses.toml`'s
+exclusions in effect throughout (`docs/findings.md` §7b has both full tables):
+most series are flat. OUSG is the one asset with a clear, sustained direction
+across all six windows, and CANA shows a late rise not present in the original
+ten-asset series. Secondary turnover over the same six windows shows no
+aggregate trend: four assets recorded no secondary trading in any window
+(RCOIN, ZTLN, CGT, ATT), three rose, five fell, and two moved without a clear
+direction. On this sample, over six months, tokenization did not measurably
+broaden ownership.
 
 **A correction, and the reason it matters.** An earlier version of this section
 reported OUSG as "the one clear mover," rising from 82.4% to 92.9%, and read
 that as concentration increasing. That series was computed before the
-holder-side exclusions of §5 existed. Regenerated on 2026-08-27 with Flux
-Finance's fOUSG lending vault excluded, OUSG instead **falls from 78.4% to
-70.0%** — the direction of the only non-flat series in the dataset reverses.
+holder-side exclusions of §5 existed. Regenerated with Flux Finance's fOUSG
+lending vault excluded, OUSG instead **falls, 81.6% to 70.1%** — the direction
+of the only sustained-direction series in the dataset reverses, and every
+point in the corrected series sits below the corresponding point in the
+uncorrected one.
 
 The confound is isolable. Two things differ between the two runs: the exclusion,
 and the window positions, which slide with the present. Holding the window fixed
