@@ -354,15 +354,16 @@ HHI, checked for dormancy — but it does **not** change the denominator: every
 share-valued metric below divides by $S(t_1)$, the full reconstructed supply,
 never by a re-summed total of $\tilde{H}(t_1)$ alone. An earlier draft of
 this section defined a separate excluded-adjusted denominator
-$\tilde{S}(t_1) = \sum_{i \in \tilde{H}(t_1)} b_i(t_1)$ and used it here; that
-was wrong, caught by directly testing the implementation rather than by
+$\tilde{S}(t_1) = \sum_{i \in \tilde{H}(t_1)} b_i(t_1)$ and used it here.
+That was wrong, caught by directly testing the implementation rather than by
 inspection (§5 reports how). The correct, and actually implemented, reading
-is deliberate rather than an oversight: an excluded DeFi contract's balance
+is deliberate rather than an oversight. An excluded DeFi contract's balance
 is still real supply in existence, and shrinking the denominator to match a
 shrunk numerator would let an exclusion manufacture certainty about
-concentration the data does not support — see the ZTLN case in §5, where
-excluding a Balancer pool holding two-thirds of supply left one confirmed
-investor holding *one third of total supply*, not "all of what remains."
+concentration that the data does not support. The ZTLN case in §5 shows
+this directly: excluding a Balancer pool holding two-thirds of supply left
+one confirmed investor holding *one third of total supply*, not "all of
+what remains."
 
 $$\text{Turnover}(P, m) = \frac{V(P, m)}{S(t_1)}
 \qquad
@@ -469,7 +470,7 @@ was excluded rather than estimated (§4.5).
 | ATT | 1,825 | 29 | 0 | 0 | 0 | 0 |
 | HLSCOPE | 160 | 3 | 2 | 0 | 0 | 2 |
 
-### 4.2 RQ1 — raw volume overstates secondary liquidity, by an asset-specific factor
+### 4.2 RQ1 — raw volume against secondary-only volume
 
 For BUIDL, the largest fund in the sample, raw ("all-mode") turnover reads
 0.2015 — roughly a fifth of outstanding supply moving in 30 days. Restricting
@@ -517,7 +518,7 @@ that ambiguity for one asset, and §4.3 shows the same split distinguishes
 "thin but functioning" from "no secondary market whatsoever," which is a
 distinction raw volume cannot express even in principle.
 
-### 4.3 RQ1 (continued) — four of ten assets show no secondary market at all
+### 4.3 RQ1 (continued) — assets with zero secondary activity
 
 ZTLN, RCOIN, ATT, and CGT recorded zero holder-to-holder transfers in the
 measurement window; their dormancy is 100%. ZTLN specifically has $150
@@ -538,7 +539,7 @@ reader cannot distinguish "0.2015 of raw activity, almost none of it
 secondary" from "0.2015 of raw activity, all of it secondary" without the
 split.
 
-### 4.4 What the verification step caught — zero-address minting is confirmed; treasury-routed issuance is not ruled out
+### 4.4 Checking the zero-address assumption against full transfer history
 
 Because the on-chain adapter replays full transfer history rather than a
 recent window, it can check whether a token has *ever* minted through the
@@ -593,7 +594,7 @@ and the search above bounds the residual risk at a few transfers per asset for
 this sample. Neither is a proof that every secondary-classified transfer here
 is genuinely secondary, and that is not claimed.
 
-### 4.5 What the constraint costs — the asset it puts out of reach
+### 4.5 What the free-endpoint constraint costs
 
 PAXG's transfer history exceeds roughly 250,000 logs, past what a free
 public RPC endpoint will serve for an exhaustive scan; it is reported as
@@ -674,7 +675,7 @@ control case also cannot establish that every asset past the boundary behaves
 as PAXG does; it establishes only that the method's findings are not an artifact
 of which assets it can reach.
 
-### 4.6 A verification failure that improved the result
+### 4.6 The USDM rebasing check
 
 USDM is a rebasing token: holder balances change without emitting `Transfer`
 events. The ledger reconstruction disagreed with the contract's own
@@ -687,7 +688,7 @@ evidence for the value of §3.1's verification step: an aggregator without an
 equivalent supply-reconciliation check would have no signal that a
 plausible-looking distribution was wrong.
 
-### 4.7 RQ2 — concentration is extreme and largely static over six months
+### 4.7 RQ2 — holder concentration, cross-sectional and over six months
 
 Eight of the ten measurable assets exceed an HHI of 2,500 (the 2010 DOJ/FTC
 "highly concentrated" threshold); the same eight also clear the stricter
