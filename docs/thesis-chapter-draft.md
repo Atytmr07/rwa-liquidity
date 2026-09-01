@@ -24,14 +24,24 @@ individual on-chain transfer events and cross-checked against each asset's
 own reported total supply, rather than relying on a third-party data
 aggregator. Against ten measurable assets, raw transfer volume is found to
 overstate secondary-market liquidity by a factor of 1.0x to 10.8x depending
-on the asset, four of ten assets record no peer-to-peer trading at all across
-six consecutive monthly windows, and holder concentration is extreme (eight
-of ten assets exceed an HHI of 2,500) and largely unchanged over six months.
-These findings are consistent with, and extend, contemporaneous academic work
-(Mafrur, 2026) that identifies the same primary/secondary conflation as an
-open measurement problem; this chapter's contribution is a method that
-resolves it for the addressable subset of tokens using the standard ERC-20
-issuance convention.
+on the asset -- rising to 39.0x for one asset (USYC) once the registry is
+widened to fourteen -- four of ten assets record no peer-to-peer trading at
+all across six consecutive monthly windows, and holder concentration is
+extreme (eight of ten assets exceed an HHI of 2,500; eleven of fourteen on
+the widened registry) and largely static over six months. One exception
+demonstrates why the method's holder-side verification matters as much as
+its transfer-side classification: the sample's one clear, sustained
+concentration trend was found to have the wrong sign, reporting one asset
+(OUSG) as concentrating when a lending vault miscounted as a single large
+holder was excluded and the corrected series instead falls throughout the
+same six months. These findings are consistent with, and extend,
+contemporaneous academic work (Mafrur, 2026) that identifies the same
+primary/secondary conflation as an open measurement problem; this chapter's
+contribution is a method that resolves it for the addressable subset of
+tokens using the standard ERC-20 issuance convention, and that the same
+address-aggregation failure mode this chapter checks for is large enough,
+in at least one case, to invert a published trend's direction rather than
+merely shift its magnitude.
 
 ---
 
@@ -188,6 +198,23 @@ endpoint can exhaustively scan. The aggregator-based approach reaches an
 asset class the independently-verifiable, on-chain approach cannot, which is
 a genuine trade-off between verifiability and coverage rather than a
 weakness to elide.
+
+One further implication follows from combining the two studies, and it is
+stated here as an implication rather than a tested claim: Mafrur (2026)
+measures liquidity from raw transfer turnover and explicitly flags, without
+correcting for, the primary/secondary conflation this chapter resolves; its
+finding that Treasury-token turnover is "intermediate" between gold-backed
+and private-credit tokens is therefore a finding about *raw* turnover for
+that class. This chapter's own sample includes several Treasury-fund tokens
+(BUIDL, OUSG, USTB, USYC, mTBILL, TBILL) for which raw turnover overstates
+secondary-market turnover by factors ranging from 2.0x to 39.0x (§4.2). The
+two studies do not share a sample or window, so this is not a direct
+re-measurement of Mafrur's result — but it does mean that his Treasury-token
+turnover figures, uncorrected for issuance, most plausibly sit closer to the
+private-credit tier than the "intermediate" label suggests once the same
+correction this chapter applies is taken into account. That reclassification
+is left as a testable claim for future work with a shared sample, not
+asserted here as established.
 
 ### 2.3 Liquidity as a measured construct
 
@@ -638,13 +665,17 @@ Eight of the ten measurable assets exceed an HHI of 2,500 (the 2010 DOJ/FTC
 1,800 threshold introduced in the 2023 revision. Top-10 holder share exceeds
 92% for nine of ten assets.
 
-**This is weaker over the widened registry, and the weakening is
-informative.** Re-measured on 2026-08-28 across fourteen assets, nine rather
-than eight of ten exceed 2,500, and three fall below the 1,800 threshold:
-OUSG at 779, Invesco's USTB at 1,067, and mTBILL at 2,052. Two of the three
-were added by the second registry pass (§3.4) and the third is OUSG once its
+**This is weaker over the widened registry than a factor of two, and the
+weakening is informative.** Re-measured on 2026-08-28 across fourteen
+assets, eleven rather than eight of ten exceed 2,500, and twelve of fourteen
+clear the stricter 1,800 threshold. Only OUSG (779) and Invesco's USTB
+(1,067) fall below 1,800; mTBILL (2,052) falls short of 2,500 but still
+clears 1,800, so it sits in neither "below the line" count despite being one
+of the three lowest HHI values in the sample. Two of those three are assets
+the second registry pass added, and OUSG clears neither line unless its
 lending vault is excluded (§5). The qualitative finding survives — most of
-these assets are concentrated by any antitrust standard — but the original
+these assets are concentrated by any antitrust standard, more so than a
+naive reading of "nine of fourteen" would suggest — but the original
 sample's near-uniformity was partly an artifact of its composition: ten assets
 that happened to share an instrument type. A tokenized RWA can have a broad
 holder base, as PAXG (§4.5a) shows at the extreme and USTB shows within the
@@ -771,14 +802,29 @@ plan with no published price) or unused at time of writing.
 Measured directly from public Ethereum data, without any commercial data
 license, ten real tokenized RWA products show that raw transfer volume
 overstates secondary-market liquidity by a factor that varies by asset
-(1.0x–10.8x), that four of ten have no secondary trading at all across a
+(1.0x–10.8x on this sample, 1.0x–39.0x once the registry is widened to
+fourteen), that four of ten have no secondary trading at all across a
 six-month observation period, and that holder concentration is both extreme
-and largely static over the same period. These findings are consistent with
-concurrent academic work (Mafrur, 2025, 2026) documenting the same general
-pattern from an independent, differently-sourced sample, and extend it
-methodologically by resolving — for tokens using the standard ERC-20
-issuance convention — the primary/secondary conflation that Mafrur (2026)
-explicitly leaves as an open limitation.
+and largely static over the same period — eleven of fourteen assets on the
+widened registry exceed an HHI of 2,500. The one exception to "largely
+static" is itself a finding: the sample's only sustained concentration trend
+was found to have the wrong sign, because a lending vault counted as a
+single large holder made OUSG appear to concentrate over six months when the
+corrected series, with that vault excluded, instead deconcentrates
+throughout. That reversal — not a marginal revision, but a sign flip in a
+previously reported result — is offered as the strongest available evidence
+that the address-versus-investor problem this chapter checks for is not a
+formality. These findings are consistent with concurrent academic work
+(Mafrur, 2025, 2026) documenting the same general pattern from an
+independent, differently-sourced sample, and extend it methodologically by
+resolving — for tokens using the standard ERC-20 issuance convention — the
+primary/secondary conflation that Mafrur (2026) explicitly leaves as an open
+limitation. §2.2 draws out one further implication: because that paper's
+turnover figures are not corrected for issuance, its "intermediate"
+liquidity classification for Treasury-token turnover is plausibly an
+overstatement, on the evidence of this chapter's own Treasury-fund sample,
+though the two studies do not share a sample or window and this is stated
+as a testable claim rather than a re-measurement.
 
 Mafrur (2026) names three directions for future research: longer token
 histories, richer concentration data, and broader multi-chain coverage. This

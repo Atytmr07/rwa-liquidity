@@ -137,9 +137,11 @@ in this document of why the split matters.
 **The three lowest-HHI assets are all new to the registry or newly corrected**:
 OUSG at 779 (after excluding its lending vault, §5a), USTB at 1,067, and
 mTBILL at 2,052. The 2026-07-30 sample's claim that eight of ten assets exceed
-2,500 does not survive the widened registry unchanged: on this run it is nine
-of fourteen. Concentration remains high in most of the sample, but "almost
-everywhere" is now too strong.
+2,500 does not survive the widened registry unchanged: on this run it is
+**eleven of fourteen** (mTBILL clears the stricter 1,800 threshold but not
+this one -- only OUSG and USTB fall short of both). Concentration remains
+high in most of the sample, but "almost everywhere" is now too strong, since
+two of fourteen sit outside even the looser 1,800 standard.
 
 ---
 
@@ -191,16 +193,21 @@ SS2.1 (2023), as stated by the
 On the original ten-asset run, **eight exceeded 2,500 and six exceeded 5,000**,
 and top-10 share was above 92% for nine of them.
 
-**The widened registry weakens this.** On the 2026-08-28 run over fourteen
-measurable assets (§2), nine exceed 2,500 rather than eight of ten, and three
-sit below the stricter 1,800 threshold: OUSG at 779, USTB at 1,067, and --
-just above it -- mTBILL at 2,052. Two of those three are assets the second
-registry pass added, and the third is OUSG only after its lending vault is
-excluded (§5a; the same figure reads 1,385 with the vault counted). The
-direction of the finding holds -- most of these assets are concentrated by any
-antitrust standard -- but "almost everywhere," written when the sample was ten
-assets that happened to share an instrument type, is too strong for a sample
-that includes products with a broader holder base.
+**The widened registry weakens this less than an earlier draft of this
+section claimed.** That draft undercounted the table above at "nine exceed
+2,500"; the correct tally, recounted directly from §2, is **eleven exceed
+2,500 rather than eight of ten**, and **twelve of fourteen clear the
+stricter 1,800 threshold**. Only two assets fall below 1,800 -- OUSG at 779
+and USTB at 1,067 -- and a third, mTBILL at 2,052, falls short of 2,500 but
+still clears 1,800, so it belongs in neither "below the line" count. Two of
+the three lowest-HHI assets are ones the second registry pass added, and
+OUSG clears neither line unless its lending vault is excluded (§5a; the same
+figure reads 1,385, still under 2,500, with the vault counted). The
+direction of the finding holds -- most of these assets are concentrated by
+any antitrust standard, and the weakening is smaller than it first looked --
+but "almost everywhere," written when the sample was ten assets that
+happened to share an instrument type, is still too strong for a sample where
+two of fourteen sit outside even the looser standard.
 
 Two cases deserve separate mention because they invert the usual reading:
 
