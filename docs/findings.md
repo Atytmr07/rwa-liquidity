@@ -153,8 +153,15 @@ did not move it.
 
 ZTLN is the starkest. It has **$150m of supply, two holders, and no transfers in
 its entire history** beyond the twelve that created it. Read from a TVL dashboard
-it is a substantial tokenized product. Measured, it is a bilateral arrangement
-recorded on a public chain.
+it is a substantial tokenized product. Measured, it is not the bilateral
+arrangement an earlier version of this document called it: one of its two
+holders is Etherscan-labeled `Balancer: Vault`, holding two-thirds of supply
+on behalf of an unknown number of liquidity providers this method cannot see
+(§5a). What can be said precisely is narrower and still stark -- one
+confirmed investor holds a third of total supply and has never moved it --
+and what cannot be said is whether anything backed by the pooled two-thirds
+has traded, since a Balancer LP position can change hands without the
+underlying ZTLN in the vault ever moving.
 
 This is not a distinction that raw transfer volume can express. `turnover_ratio`
 under `--mode all` also reads 0.0000 for these four, so nothing is gained here by
@@ -226,18 +233,23 @@ Two cases deserve separate mention because they invert the usual reading:
 
 The concentration figures above treat every address with a balance as one
 holder, which cannot distinguish an investor's wallet from a contract that
-pools many investors behind it. Checking OUSG, USDM and CANA's top holders
-against Etherscan's own contract labels (2026-08-26) found three: `Flux
-Finance: fOUSG Token`, a lending vault that accepts OUSG as collateral;
-Mountain Protocol's own `wUSDM` wrapper; and, for CANA, both a CANA-specific
-Uniswap V2 pool and Uniswap V4's global pool-manager contract. Full citations
-are in `src/rwa_liquidity/sources/data/known_addresses.toml`.
+pools many investors behind it. Every measurable asset in the registry has
+now been checked against Etherscan's own contract labels for this (most on
+2026-08-26, the remaining nine on 2026-08-31/2026-09-01), turning up seven
+contracts across five assets: `Flux Finance: fOUSG Token` (OUSG, a lending
+vault); Mountain Protocol's own `wUSDM` wrapper (USDM); a CANA-specific
+Uniswap V2 pool and Uniswap V4's global pool-manager contract (CANA); Usual's
+`DaoCollateral` treasury (USYC); Midas's `Instant Redemption Vault` (USTB);
+and, found in this pass, `Balancer: Vault` (ZTLN) and Elixir's `deUSD Mint
+and Redeem` contract (HLSCOPE). Full citations are in
+`src/rwa_liquidity/sources/data/known_addresses.toml`.
 
 To isolate what excluding them actually changes -- without also mixing in a
 different observation window, which would confound the comparison -- the same
-cached snapshots, transfers and holders (window ending 2026-08-26) were run
-through `build_report` twice: once with no exclusions, once with the addresses
-above excluded. Nothing else differs between the two columns.
+cached snapshots, transfers and holders (window held fixed per asset, dated
+in each row group) were run through `build_report` twice: once with no
+exclusions, once with the addresses above excluded. Nothing else differs
+between the two columns.
 
 | Asset | Metric | No exclusions | Excluded | |
 |---|---|---|---|---|
@@ -247,25 +259,61 @@ above excluded. Nothing else differs between the two columns.
 | USDM | HHI | 7,929 | **7,518** | -5% |
 | CANA | Top-10 share | 99.49% | **98.86%** | -0.6 pts |
 | CANA | HHI | 2,781.6 | **2,781.2** | ~0 |
+| USYC | Top-10 share | 99.997% | **68.254%** | -31.7 pts |
+| USYC | HHI | 2,507.0 | **1,499.3** | -40% |
+| USTB | Top-10 share | 84.643% | **75.612%** | -9.0 pts |
+| USTB | HHI | 1,056.7 | **934.0** | -12% |
+| ZTLN | Top-10 share | 100.0% | **33.3%** | -66.7 pts |
+| ZTLN | HHI | 5,556 | **1,110.6** | -80% |
+| ZTLN | Dormancy | 100.0% | **33.3%** | -66.7 pts |
+| HLSCOPE | Top-10 share | 100.0% | **96.9%** | -3.1 pts |
+| HLSCOPE | HHI | 4,724 | **4,714.0** | ~0 |
+| HLSCOPE | Dormancy | 100.0% | **96.9%** | -3.1 pts |
 
-**OUSG is the one that matters.** A quarter of its supply sits in one lending
-vault; excluding it does not just adjust the concentration figure, it changes
-which side of the DOJ/FTC "highly concentrated" line (HHI 1,800 under the 2023
-guidelines) OUSG falls on in the direction of *less* concentrated once the
-vault is set aside. **CANA barely moves**, despite being the only asset in the
-registry with a confirmed public AMM pool among its top holders: its single
-largest holder already dominates supply independent of the pool, so excluding
-a contract that never was the concentration driver does not change the
-headline number, even though it was still the right thing to exclude on
-principle. **USDM's top-10 share and dormancy stay `n/a`** either way -- the
+**OUSG is the one that matters most for the six-window trend** (§7b): a
+quarter of its supply sits in one lending vault, and excluding it changes
+which side of the DOJ/FTC "highly concentrated" line (HHI 1,800 under the
+2023 guidelines) OUSG falls on, in the direction of *less* concentrated.
+**USYC is the largest single move in this table**: the Usual treasury held
+essentially all of measured supply (99.997% in the top 10 before exclusion),
+so removing it drops top-10 share by 31.7 points and very nearly halves HHI.
+**CANA and HLSCOPE barely move**, for opposite reasons: CANA's single largest
+holder already dominates supply independent of the pool it also happens to
+hold, so excluding a contract that was never the concentration driver does
+not change the headline number; HLSCOPE's excluded contract held a small
+fraction (3.1%) of an already-thin token to begin with. Both were still the
+right addresses to exclude on principle, and this table is the record that
+checking does not always find something consequential -- which is itself
+evidence the checks are not being applied selectively toward a preferred
+result. **USDM's top-10 share and dormancy stay `n/a`** either way -- the
 wrapper exclusion does not touch the separate rebasing-reconciliation failure
-documented in §6, and its HHI figure, while numerically defined, inherits that
-same unreliability and should not be read as precise regardless of which
-column it is read from.
+documented in §6, and its HHI figure, while numerically defined, inherits
+that same unreliability and should not be read as precise regardless of
+which column it is read from.
+
+**ZTLN is the one that changes the narrative, not just the number.** Every
+metric in this package divides by an asset's full reconstructed total
+supply, never by a re-summed total of the remaining post-exclusion holders
+(`docs/thesis-chapter-draft.md` §3.3) -- so excluding the Balancer vault does
+not turn ZTLN's one remaining confirmed investor into "100% concentrated by
+default." It correctly reports that the confirmed investor holds **33.3% of
+total supply**, and says nothing at all about the other 66.7%, which sits in
+a DeFi pool this method cannot see inside. This also means the "ZTLN has
+$150m supply, two holders, no trading in its entire history" framing used
+elsewhere in this document (§3) and in the README is imprecise: one of those
+two addresses is not an investor, and "no trading in its entire history" is
+true of the ZTLN token specifically but is silent on whether claims on the
+pooled ZTLN (Balancer LP shares) have themselves traded.
 
 None of this has been propagated into §1, §2 or §7a's tables, which predate
-`known_addresses.toml` and were left as originally measured -- see the note at
-the top of this document.
+these exclusions and were left as originally measured -- see the note at
+the top of this document. §2's HHI-threshold counts (11 of 14 exceed 2,500,
+12 of 14 exceed 1,800) are counted directly from that table and do **not**
+yet reflect USYC, USTB, ZTLN or HLSCOPE's exclusions above; applying them
+would move at least ZTLN below both thresholds (1,110.6), which this
+document has not yet done because it requires regenerating §1/§2 in full,
+not just this isolated-diff table, and that has not been run since these
+five exclusions were added.
 
 ## 6. The verification check earning its place
 

@@ -348,7 +348,21 @@ A(P, m) = \bigl(\{s(\tau) : \tau \in \mathcal{T}_m(P)\} \cup
                 \{r(\tau) : \tau \in \mathcal{T}_m(P)\}\bigr) \setminus \mathcal{B}$$
 
 **The six metrics.** Let $\tilde{H}(t_1) = H(t_1) \setminus (\mathcal{B} \cup \mathcal{X})$
-be the holder set after exclusions, and $\tilde{S}(t_1) = \sum_{i \in \tilde{H}(t_1)} b_i(t_1)$.
+be the holder set after exclusions. $\tilde{H}(t_1)$ narrows which addresses
+are *eligible to be counted as a holder* — ranked for Top-$n$, summed into
+HHI, checked for dormancy — but it does **not** change the denominator: every
+share-valued metric below divides by $S(t_1)$, the full reconstructed supply,
+never by a re-summed total of $\tilde{H}(t_1)$ alone. An earlier draft of
+this section defined a separate excluded-adjusted denominator
+$\tilde{S}(t_1) = \sum_{i \in \tilde{H}(t_1)} b_i(t_1)$ and used it here; that
+was wrong, caught by directly testing the implementation rather than by
+inspection (§5 reports how). The correct, and actually implemented, reading
+is deliberate rather than an oversight: an excluded DeFi contract's balance
+is still real supply in existence, and shrinking the denominator to match a
+shrunk numerator would let an exclusion manufacture certainty about
+concentration the data does not support — see the ZTLN case in §5, where
+excluding a Balancer pool holding two-thirds of supply left one confirmed
+investor holding *one third of total supply*, not "all of what remains."
 
 $$\text{Turnover}(P, m) = \frac{V(P, m)}{S(t_1)}
 \qquad
@@ -356,11 +370,11 @@ $$\text{Turnover}(P, m) = \frac{V(P, m)}{S(t_1)}
 
 $$\text{VolumePerActive}(P, m) = \frac{V(P, m)}{\lvert A(P, m) \rvert}
 \qquad
-\text{Top-}n\text{Share}(t_1) = \frac{1}{\tilde{S}(t_1)} \sum_{i \in \tilde{H}_{(n)}(t_1)} b_i(t_1)$$
+\text{Top-}n\text{Share}(t_1) = \frac{1}{S(t_1)} \sum_{i \in \tilde{H}_{(n)}(t_1)} b_i(t_1)$$
 
-$$\text{HHI}(t_1) = 10^4 \sum_{i \in \tilde{H}(t_1)} \left( \frac{b_i(t_1)}{\tilde{S}(t_1)} \right)^{\!2}
+$$\text{HHI}(t_1) = 10^4 \sum_{i \in \tilde{H}(t_1)} \left( \frac{b_i(t_1)}{S(t_1)} \right)^{\!2}
 \qquad
-\text{Dormancy}(P, m) = \frac{1}{\tilde{S}(t_1)} \sum_{i \in \tilde{H}(t_1) \setminus A(P, m)} b_i(t_1)$$
+\text{Dormancy}(P, m) = \frac{1}{S(t_1)} \sum_{i \in \tilde{H}(t_1) \setminus A(P, m)} b_i(t_1)$$
 
 where $\tilde{H}_{(n)}(t_1) \subseteq \tilde{H}(t_1)$ denotes the $n$ addresses
 with the largest balances, $n = 10$ by default.
@@ -370,17 +384,25 @@ address may trade during $P$ and hold nothing at $t_1$, so it enters the
 numerator without entering the denominator. Values above 1 are reported with
 a warning rather than clamped, since the churn they indicate is itself a
 liquidity signal. $\text{Top-}n\text{Share}$ and $\text{Dormancy}$ *are*
-bounded in $[0, 1]$ by construction, so a computed value outside that interval
-proves the holder reconstruction disagrees with reported supply; the metric is
-then returned as undefined rather than published (this is the guard that fires
-on USDM, §4.6). Every metric is undefined when its denominator is zero — an
-empty $A(P, m)$, or $\tilde{S}(t_1) = 0$ — and returns $\varnothing$ rather
-than $0$, since "no denominator" and "measured zero" are different findings.
+bounded in $[0, 1]$ by construction — each numerator is a sum over some
+subset of $H(t_1)$, and $S(t_1)$ sums over all of $H(t_1)$, so a computed
+value outside that interval proves the holder reconstruction disagrees with
+reported supply; the metric is then returned as undefined rather than
+published (this is the guard that fires on USDM, §4.6). Every metric is
+undefined when its denominator is zero — an empty $A(P, m)$, or
+$S(t_1) = 0$ — and returns $\varnothing$ rather than $0$, since "no
+denominator" and "measured zero" are different findings.
 
-$\text{Turnover}$ divides by unexcluded $S(t_1)$ rather than $\tilde{S}(t_1)$
-deliberately: a DeFi vault's holdings are part of supply in existence, and
-netting them out of the denominator of a *flow* measure would inflate turnover
-against a supply figure that does not match the chain.
+Every share-valued metric divides by the same, unexcluded $S(t_1)$ for the
+same reason: a DeFi vault's holdings are part of supply in existence, and
+netting an exclusion out of the denominator as well as the numerator would
+manufacture certainty about the excluded balance's concentration — zero
+information, reported as zero risk — that the exclusion itself does not
+provide. Concretely, this means excluding a large, uninformative holder does
+not necessarily *raise* the reported concentration of the rest; it can lower
+it, if what is excluded was large enough that the remaining confirmed
+investors turn out to hold a smaller share of the whole than their share of
+each other implied. §5's ZTLN case is exactly this.
 
 Every volume-based metric is computed in all three modes, with
 $m_{\text{sec}}$ as the default, on the argument that under-reporting
@@ -499,8 +521,15 @@ distinction raw volume cannot express even in principle.
 
 ZTLN, RCOIN, ATT, and CGT recorded zero holder-to-holder transfers in the
 measurement window; their dormancy is 100%. ZTLN specifically has $150
-million in outstanding supply, two holders, and no transfers beyond the
-twelve that created it, across its entire on-chain history. Raw transfer
+million in outstanding supply and no transfers beyond the twelve that
+created it, across its entire on-chain history. Its holder count is stated
+here as one *confirmed investor*, not two: checked against Etherscan's own
+address labels (§5), one of ZTLN's two nominal holders is `Balancer: Vault`,
+a DeFi pool contract, holding two-thirds of supply on behalf of an unknown
+number of liquidity providers. The confirmed investor holds the remaining
+third and has never moved it; whether anything backed by the pooled
+two-thirds has traded is not something this method can see, since an AMM
+position can change hands without the underlying token moving. Raw transfer
 volume under `all` mode also reads 0.0000 for these four — the
 primary/secondary split does not change the number for these specific
 assets, but it establishes that a *non-zero* reading elsewhere (as with
@@ -739,34 +768,57 @@ actively-traded asset whose trades settle off-chain would read as dormant.
 addresses. A custodian holding for a thousand retail clients behind one
 address is indistinguishable here from a single large holder, and one
 investor split across ten addresses is indistinguishable from ten separate
-investors. This is not a hypothetical failure mode: checking each measurable
-asset's top holders against Etherscan's own contract labels on 2026-08-26
-found, for three of the ten, an address that is by construction many
+investors. This is not a hypothetical failure mode: checking every
+measurable asset's top holders against Etherscan's own contract labels
+(2026-08-26 through 2026-09-01, in three passes as the registry grew) found,
+for five of the fourteen, an address that is by construction many
 end-holders behind one balance rather than one investor. OUSG's largest
 holder, at roughly 25% of supply, is `Flux Finance: fOUSG Token`, a lending
 vault that accepts OUSG as collateral; USDM's largest holder is Mountain
 Protocol's own `wUSDM` wrapper contract; CANA's top holders include both an
-asset-specific Uniswap V2 pool and Uniswap V4's global pool-manager contract.
-These are recorded, with their citation, in `known_addresses.toml`
+asset-specific Uniswap V2 pool and Uniswap V4's global pool-manager contract;
+USYC's largest holder is Usual's `DaoCollateral` treasury, backing its
+stablecoin's supply; USTB's third-largest is Midas's `Instant Redemption
+Vault`, the liquidity behind another registry asset's (mTBILL's) instant
+redemptions; and — the case that most changes a reported finding rather than
+just a number — ZTLN's larger of its two nominal holders is `Balancer:
+Vault`, holding two-thirds of its supply. These are recorded, with their
+citation, in `known_addresses.toml`
 (`src/rwa_liquidity/sources/known_addresses.py`) and excluded from this
 chapter's top-10-share, HHI, and dormancy figures by default when computed
 through the CLI (`docs/methodology.md` §2.4).
 
-**The consequences are not marginal.** Excluding OUSG's vault moves its HHI
-from 1,422 to 779 — across the DOJ/FTC "highly concentrated" threshold — and
-its top-10 share from 94.2% to 70.0%. More seriously, it reverses the direction
-of the only non-flat trend series in the study (§4.7): OUSG reads as
-concentrating with the vault counted and as deconcentrating without it. A study
-that computes holder concentration from raw balances, without separating
-contracts that aggregate many end-holders from individual investors, is exposed
-to a failure that is both large and silent.
+**The consequences are not marginal, and not always a change in magnitude.**
+Excluding OUSG's vault moves its HHI from 1,422 to 779 — across the DOJ/FTC
+"highly concentrated" threshold — and its top-10 share from 94.2% to 70.0%.
+More seriously, it reverses the direction of the only non-flat trend series
+in the study (§4.7): OUSG reads as concentrating with the vault counted and
+as deconcentrating without it. USYC moves further still: excluding Usual's
+treasury drops its top-10 share by 31.7 points and nearly halves its HHI
+(§4.5a's full isolated-diff table is in `docs/findings.md` §5a). ZTLN's case
+is different in kind, not degree: it is one of the four assets §4.3 reports
+as having no secondary market, and the two-holder framing used there and in
+this chapter's abstract is itself imprecise once one of the two is confirmed
+to be a pool contract rather than an investor. Every share-valued metric in
+this method divides by an asset's full total supply regardless of exclusion
+(§3.3), so removing the pool does not inflate ZTLN's remaining investor to
+"100% concentrated" — it correctly reports that one confirmed investor holds
+33.3% of total supply and says nothing about the rest, which is a narrower
+and more defensible claim than either the original "two holders" framing or
+a naive full-renormalization would produce. A study that computes holder
+concentration from raw balances, without separating contracts that aggregate
+many end-holders from individual investors, is exposed to a failure that can
+be large, silent, and — as ZTLN shows — not always in the direction of
+overstating concentration.
 
-The correction is not exhaustive: only three assets, and only the contracts an
-explorer label made identifiable, have been checked. An asset absent from that
-file has not been verified clean, only unexamined, and both directions of the
-address-versus-investor error remain possible wherever the file is silent — HHI
-and top-10 share should still be read as bounds rather than as precise investor
-concentration.
+The correction is, as of this writing, applied to every measurable asset in
+the registry, but it is bounded by what an explorer label can identify: an
+unlabeled contract, or a labeled one this project's search did not think to
+check, is not caught by this method, and the other nine assets recorded no
+DeFi-aggregation contract among their top holders only in the sense that
+none was *found*, which is not the same guarantee as none *existing*. HHI
+and top-10 share should still be read as bounds rather than as precise
+investor concentration wherever this file's citation is silent.
 
 **Single-chain scope.** All measurements are Ethereum-only. BUIDL, for
 example, also exists on Aptos, Solana, Avalanche, and several other chains,
@@ -786,6 +838,18 @@ case (§4.5a), which addresses the question of whether the sample was
 *systematically* thin, but does not convert ten observations into a panel.
 Claims here are stated for this sample and this window rather than for
 tokenized RWA markets in general.
+
+This is also why §4.7's six-window series are read by eye ("rising,"
+"falling," "flat") rather than tested for statistical significance: six
+points per asset is too short a series to fit a trend model or compute a
+confidence interval that would mean anything, and this chapter's stated
+contribution (§1.4) is a verified measurement method, not a set of
+inferential claims about the population of tokenized RWAs — unlike Mafrur
+(2026), whose fixed-effects panel regression is doing exactly that
+inferential work over a longer, differently-sourced series. Reading six
+points by eye is a real limitation of what can be claimed from them, not an
+oversight; it is the reason every trend claim here is stated as a direction
+observed in this sample, never as a rate or a population-level estimate.
 
 **Two of five data adapters remain unverified against live APIs.** The
 keyless on-chain adapter that produced every finding in §4 has been run

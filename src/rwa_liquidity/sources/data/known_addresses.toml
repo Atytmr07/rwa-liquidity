@@ -9,16 +9,27 @@
 # overstates concentration in one direction and, because that pool's balance is
 # also excluded from nobody's `dormancy`, understates it in another.
 #
-# Every entry here was found by hand on 2026-08-26, cross-checking Etherscan's
-# own address labels (not guessed from balance size alone) against
-# `eth_getCode` to confirm the address is a contract. An asset absent from this
-# file has not been checked -- that is not the same as "checked and clean."
+# Every entry here was found by hand, cross-checking Etherscan's own address
+# labels (not guessed from balance size alone) against `eth_getCode` to
+# confirm the address is a contract, in two passes: 2026-08-26 (the original
+# ten-asset registry) and 2026-09-01 (the five assets the second registry
+# pass added, plus the four originally-registered assets the first pass had
+# not yet reached). As of 2026-09-01 every measurable asset in the registry
+# has been checked at least once; an entry with empty `excluded_contracts`
+# and `issuer_addresses` below means "checked, nothing found," not "not
+# checked" -- each asset's own notes say what was looked at and how.
 #
-# `excluded_contracts` are addresses to drop from the holder distribution before
-# computing concentration and dormancy metrics (see `build_report`'s `exclude`
-# parameter). `issuer_addresses` are treasury/distributor addresses whose
-# transfers should be classified as primary rather than secondary (see
-# `classify_transfers`); none are populated yet -- see the note on each entry.
+# `excluded_contracts` are addresses to drop from the holder distribution
+# before computing concentration and dormancy metrics (see `build_report`'s
+# `exclude` parameter) -- this narrows which holders are counted, it does
+# NOT shrink the denominator those counts are divided by; every share-valued
+# metric still divides by the asset's full reconstructed total supply
+# (`docs/thesis-chapter-draft.md` SS3.3 has the formal statement and the
+# ZTLN entry below has the case that caught this getting stated backwards in
+# an earlier draft). `issuer_addresses` are treasury/distributor addresses
+# whose transfers should be classified as primary rather than secondary (see
+# `classify_transfers`); CANA and CGT have confirmed entries, found by a
+# distributor-signature search -- see each asset's own notes.
 
 schema_version = 1
 
@@ -255,5 +266,112 @@ classified as primary is unresolved and unbounded here, unlike OUSG's
 rejected candidate, which came with a 3-of-50 bound. Also not excluded from
 `excluded_contracts`: it is an EOA, not a contract, so it does not fit that
 mechanism's rationale either way.
+"""
+
+# Added 2026-09-01, closing out the holder audit: checked the five remaining
+# measurable assets not yet in this file (ZTLN, FDIT, RCOIN, ATT, HLSCOPE).
+# Every measurable asset in the registry has now been checked at least once.
+
+[[asset]]
+uid = "ethereum:0x917991d52aa2fc1b5612a6aa5e4e81d580f97532"  # ZTLN
+excluded_contracts = [
+    "0xBA12222222228d8Ba445958a75a0704d566BF2C8", # Balancer: Vault
+]
+issuer_addresses = []
+notes = """
+Checked 2026-09-01. ZTLN's headline figure everywhere in this project's
+narrative docs (README, findings.md SS3, thesis-chapter-draft.md SS4.3) is
+"$150m supply, two holders, no trading in its entire history." One of those
+two addresses, holding 100,011,201 of 150,000,000 ZTLN (66.7% of supply), is
+Etherscan-labeled `Balancer: Vault` -- the shared vault contract behind every
+Balancer V2 pool, confirmed by navigating directly to the address (page
+title: "Balancer: Vault | Address: 0xba122222...d566bf2c8 | Etherscan"), not
+inferred from balance size. This is the same address-versus-investor failure
+mode as OUSG's Flux vault and USYC's Usual Treasury, in the one place this
+project's own prose leaned on "two holders" as a headline claim rather than
+a table entry -- the "bilateral arrangement" reading in findings.md SS3 is
+therefore not quite right: one side is a DeFi pool contract, which could
+represent zero LPs, one, or many behind it; this file cannot say which, only
+that it is not itself an investor. The second holder (49,988,799 ZTLN, EOA,
+no Etherscan label) is unaffected. Quantified impact (30-day window ending
+2026-09-01, isolated on identical cached data): top-10 holder share
+100.0% -> **33.3%**, HHI 5,556 -> **1,110.6**, dormancy 100.0% -> **33.3%**.
+
+Every share-valued metric in this package divides by the token's full
+reconstructed total supply, never by a re-summed total of the remaining
+(post-exclusion) holders -- see `docs/thesis-chapter-draft.md` SS3.3, which
+had this backwards in an earlier draft and was corrected against this exact
+case. So excluding the vault does not renormalize ZTLN down to "one investor,
+therefore 100% concentrated": it correctly reports that only one-third of
+total supply is confirmed to sit with an identified investor, and says
+nothing about the other two-thirds rather than assuming it is either
+maximally concentrated or perfectly diffuse. The exclusion does not soften
+ZTLN's illiquidity finding -- the confirmed investor has still never traded
+-- but it does soften the "no trading in its entire history" framing used in
+README/findings.md SS3/thesis-chapter-draft.md SS4.3: that is true of the
+ZTLN token itself, but says nothing about whether Balancer LP shares
+representing a claim on the pooled ZTLN have traded, which this method
+cannot see. Both narrative claims should be corrected to distinguish "the
+one confirmed investor never traded" from "nothing backed by this token has
+ever traded," which is not established.
+"""
+
+[[asset]]
+uid = "ethereum:0x48ab4e39ac59f4e88974804b04a991b3a402717f"  # FDIT
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+Checked 2026-09-01, nothing to flag. Both of FDIT's two holders (30,028,947
+and 1,036,485 tokens) are unlabeled EOAs on Etherscan -- no contract tag, no
+name tag, no ENS name.
+"""
+
+[[asset]]
+uid = "ethereum:0x252739487c1fa66eaeae7ced41d6358ab2a6bca9"  # RCOIN
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+Checked 2026-09-01, nothing to flag. The top five of RCOIN's 25 holders
+(91.3%, 2.2%, 1.2%, 0.8%, and 0.3% of supply) carry no Etherscan contract or
+name tag. The remaining twenty holders each hold under 0.3% of supply,
+several at an identical balance (1,179.5741 tokens, five addresses) that
+looks like an equal-split distribution rather than a pooling contract; not
+individually checked given the size of the position each represents.
+"""
+
+[[asset]]
+uid = "ethereum:0x90d53b872ce6421122b41a290acdd22a5ed931bd"  # ATT
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+Checked 2026-09-01, nothing to flag. Rank 1 (82.2% of supply) and rank 3
+(2.6%) are unlabeled EOAs. Rank 2 (11.5%) resolves to the ENS name
+"philipberntsen.eth" but carries no "Contract" tag or protocol name tag --
+read as an individual holder under the same convention applied to OUSG's and
+USYC's ENS-named, non-contract holders elsewhere in this file. Remaining
+holders each under 1.3% of supply, not individually checked.
+"""
+
+[[asset]]
+uid = "ethereum:0xda2ffa104356688e74d9340519b8c17f00d7752e"  # HLSCOPE
+excluded_contracts = [
+    "0x69088d25A635D22Dcbe7C4a5C7707B9cC64bd114", # Elixir: deUSD Mint and Redeem
+]
+issuer_addresses = []
+notes = """
+Checked 2026-09-01. HLSCOPE has three holders; rank 3 (5.0 of ~159.9 tokens,
+3.1% of supply) is Etherscan-labeled `Elixir: deUSD Mint and Redeem`, the
+contract behind Elixir's deUSD stablecoin issuance -- a protocol accepting
+HLSCOPE as mint/redeem collateral, not an investor. Ranks 1 and 2 (51.8% and
+45.2% of supply) are unlabeled EOAs. Quantified impact (30-day window ending
+2026-09-01, isolated on identical cached data): top-10 holder share
+100.0% -> **96.9%**, HHI 4,724 -> **4,714.0**, dormancy 100.0% -> **96.9%**.
+All three figures move together because both remaining holders were already
+inactive in the window, so the same sum (ranks 1+2) appears in every
+numerator; only the excluded contract's 3.1% of supply drops out. Unlike
+ZTLN, this exclusion barely moves anything -- the excluded holder was a small
+fraction of a thin token to begin with -- which is itself informative: not
+every DeFi-contract holder found by this audit is consequential, and this
+file records the small ones as faithfully as the large one.
 """
 

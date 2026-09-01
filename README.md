@@ -23,8 +23,13 @@ one particular provider's key did not fix it.
 
 **Four of the fourteen measurable assets recorded zero holder-to-holder
 transfers in 30 days** (ZTLN, RCOIN, CGT, ATT), in every one of six
-consecutive monthly windows. One of those, ZTLN, has $150m outstanding, two
-holders, and no trading in its entire history.
+consecutive monthly windows. One of those, ZTLN, has $150m outstanding and no
+trading in its entire history -- and one of its two "holders" turned out to
+be a Balancer AMM pool, not an investor, once checked against Etherscan's own
+labels. What survives that check is narrower and still stark: one confirmed
+investor holds a third of total supply and has never moved it; the other
+two-thirds sits in a pool this method cannot see inside. See
+`docs/findings.md` §5a.
 
 | BlackRock BUIDL — $224.8M, **59 holders** | Counting all transfers | Counting only secondary trades |
 |---|---|---|
