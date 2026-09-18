@@ -14,6 +14,54 @@ defensible in conversation months from now.
 
 ---
 
+## 2026-09-18 -- sharded the parquet cache by digest prefix, migrated 137,513 existing entries
+
+**Decided:** `ParquetCache.path_for()` laid every entry for a given
+`source/dataset` in one flat directory. That was fine at hundreds of
+entries and became a real problem at scale: `.rwa-cache/evm_rpc/eth_getLogs/`
+had grown to 124,319 files (one per full-history log-scan window, across the
+registry), and `.rwa-cache/evm_rpc/eth_getCode/` to 12,287. Windows NTFS
+directory performance degrades sharply well before that count -- a plain
+`ls` of the `eth_getLogs` directory took over two minutes, and every cache
+read or write against it paid the same cost, which had been silently
+inflating this session's on-chain scan times for weeks and was misdiagnosed
+more than once as RPC-endpoint slowness before the file count was checked
+directly.
+
+Added `SHARD_PREFIX_LENGTH` (2 hex characters of the entry's digest, already
+uniformly distributed as a truncated SHA-256) as a subdirectory between
+`dataset` and the entry file: `<root>/<source>/<dataset>/<digest[:2]>/<digest>.parquet`.
+256 shards over 124k entries averages ~485 files per directory, well inside
+NTFS's comfortable range, and the scheme scales the same way if the registry
+grows further. `ParquetCache.clear()` needed no change (`rglob("*.parquet")`
+already recurses); `put()` needed no change (`path.parent.mkdir(parents=True)`
+already creates whatever depth `path_for` returns).
+
+**Migrated rather than left the old cache orphaned.** A path-scheme change
+alone makes every existing entry an invisible cache miss under the new code
+-- functionally correct (nothing reads a wrong answer) but it would have
+silently discarded weeks of scanning, including entries fetched against a
+rate-limited endpoint that resisted re-scanning for hours at a stretch
+earlier this project (see the two entries above). A one-time script moved
+each flat-layout `*.parquet` file to its shard directory by `Path.rename`
+(a metadata-only operation on the same volume, not a copy) rather than
+deleting and re-fetching. All 137,513 existing entries across every
+source/dataset moved with zero collisions and zero data loss, verified by
+reading a sample from every source/dataset pair after the move and
+confirming the parquet metadata (`format_version`) matched.
+
+**What this fixes and what it does not.** Directory listing of
+`eth_getLogs` dropped from 120+ seconds to 0.05 seconds post-migration,
+confirming the sharding itself works. A subsequent live fetch (ZTLN's
+holder reconstruction) still took 117 seconds -- that is real RPC network
+latency against a public endpoint under load, the same issue the
+2026-09-01 entries above already diagnosed, and this change does not touch
+it. The two are easy to conflate because they produced the same symptom
+(a slow scan); they are separate problems with separate fixes, and only one
+of them is closed by this entry.
+
+---
+
 ## 2026-09-01 -- Alchemy's free tier caps `eth_getLogs` at a 10-block range; reverted `EVM_RPC_URL` to the public endpoint
 
 **Decided:** a BUIDL scan against a newly-created Alchemy API key failed 40/40

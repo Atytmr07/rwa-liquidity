@@ -9,7 +9,7 @@ import polars as pl
 import pyarrow.parquet as pq
 import pytest
 
-from rwa_liquidity.cache import CacheKey, CorruptCacheEntryError, ParquetCache
+from rwa_liquidity.cache import SHARD_PREFIX_LENGTH, CacheKey, CorruptCacheEntryError, ParquetCache
 
 from .conftest import NOW
 
@@ -78,8 +78,21 @@ def test_different_parameters_are_different_entries(
 
 def test_datasets_and_sources_are_separated_on_disk(cache_root: Path) -> None:
     path = ParquetCache(cache_root).path_for(KEY)
-    assert path.parent == cache_root / "defillama" / "protocol_tvl"
+    assert path.parent.parent == cache_root / "defillama" / "protocol_tvl"
+    assert path.parent.name == KEY.digest()[:SHARD_PREFIX_LENGTH]
     assert path.suffix == ".parquet"
+
+
+def test_entries_are_sharded_by_digest_prefix(cache_root: Path, snapshots: pl.DataFrame) -> None:
+    # A dataset with many entries must not collect them all into one flat
+    # directory -- see SHARD_PREFIX_LENGTH's docstring for why.
+    cache = ParquetCache(cache_root)
+    cache.put(KEY, snapshots, retrieved_at=NOW)
+
+    path = cache.path_for(KEY)
+    assert path.name == f"{KEY.digest()}.parquet"
+    assert len(path.parent.name) == SHARD_PREFIX_LENGTH
+    assert path.is_file()
 
 
 def test_put_overwrites_the_previous_entry(cache_root: Path, snapshots: pl.DataFrame) -> None:

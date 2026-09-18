@@ -8,6 +8,7 @@ TTL; `--refresh` bypasses the cache and rewrites it.
 
 from rwa_liquidity.cache.store import (
     CACHE_FORMAT_VERSION,
+    SHARD_PREFIX_LENGTH,
     CacheEntry,
     CacheKey,
     CorruptCacheEntryError,
@@ -16,6 +17,7 @@ from rwa_liquidity.cache.store import (
 
 __all__ = [
     "CACHE_FORMAT_VERSION",
+    "SHARD_PREFIX_LENGTH",
     "CacheEntry",
     "CacheKey",
     "CorruptCacheEntryError",

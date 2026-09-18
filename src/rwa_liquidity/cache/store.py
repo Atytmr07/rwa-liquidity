@@ -31,7 +31,13 @@ import pyarrow.parquet as pq
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ["CacheEntry", "CacheKey", "CorruptCacheEntryError", "ParquetCache"]
+__all__ = [
+    "SHARD_PREFIX_LENGTH",
+    "CacheEntry",
+    "CacheKey",
+    "CorruptCacheEntryError",
+    "ParquetCache",
+]
 
 #: Bumped when the on-disk layout changes in a way older entries cannot satisfy.
 #: Entries written by a different version are treated as a miss rather than
@@ -46,6 +52,15 @@ _CACHE_DIR_ENV_VAR: Final = "RWA_LIQUIDITY_CACHE_DIR"
 # number of distinct queries a research workflow issues, and short names keep
 # the cache directory readable when inspecting it by hand.
 _DIGEST_LENGTH: Final = 16
+
+#: How many leading hex characters of the digest become a shard subdirectory.
+#: 2 characters spreads entries across 256 directories -- enough that a
+#: dataset with hundreds of thousands of entries (a full-history on-chain
+#: scan caches one file per `eth_getLogs` window) still keeps each directory
+#: small, without adding more path depth than an interactive user inspecting
+#: the cache by hand would want. A change to this value changes every
+#: existing entry's path; see `docs/DECISIONS.md` before changing it.
+SHARD_PREFIX_LENGTH: Final = 2
 
 ParamValue = str | int | float | bool | None
 
@@ -177,9 +192,20 @@ class CacheEntry:
 class ParquetCache:
     """A directory of parquet files, one per provider query.
 
-    Entries are laid out as `<root>/<source>/<dataset>/<digest>.parquet`, so the
-    cache can be inspected, partially deleted, or committed as a fixture without
-    this package being involved.
+    Entries are laid out as
+    `<root>/<source>/<dataset>/<digest[:SHARD_PREFIX_LENGTH]>/<digest>.parquet`,
+    so the cache can be inspected, partially deleted, or committed as a fixture
+    without this package being involved. The shard directory exists because a
+    single dataset can accumulate far more entries than one flat directory
+    handles well: a full-history on-chain scan caches one entry per
+    `eth_getLogs` window, and a registry of a few dozen assets produces well
+    into six figures of them. Windows NTFS in particular degrades sharply once
+    a single directory holds that many files -- every cache read and write
+    against it slows down, not just enumeration. `SHARD_PREFIX_LENGTH` hex
+    characters of the digest (which is already uniformly distributed, being a
+    truncated SHA-256) spreads entries across `16**SHARD_PREFIX_LENGTH`
+    directories, keeping any one of them small regardless of how large the
+    dataset grows.
     """
 
     def __init__(self, root: Path | None = None) -> None:
@@ -197,7 +223,9 @@ class ParquetCache:
 
     def path_for(self, key: CacheKey) -> Path:
         """Return the file this key maps to, whether or not it exists."""
-        return self.root / key.source / key.dataset / f"{key.digest()}.parquet"
+        digest = key.digest()
+        shard = digest[:SHARD_PREFIX_LENGTH]
+        return self.root / key.source / key.dataset / shard / f"{digest}.parquet"
 
     def get(
         self,
