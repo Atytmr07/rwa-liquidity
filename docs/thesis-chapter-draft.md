@@ -537,6 +537,38 @@ that ambiguity for one asset, and §4.3 shows the same split distinguishes
 "thin but functioning" from "no secondary market whatsoever," which is a
 distinction raw volume cannot express even in principle.
 
+### 4.2a A pooled comparison against Mafrur (2026)'s own reported figures
+
+§2.2 situates this chapter against Mafrur (2026) qualitatively. The
+comparison can be made quantitative for the one statistic both papers
+report at matching granularity. Mafrur (2026) reports, pooled across 54
+token-months (nine tokens, Dec 2025–May 2026, his own Table 2), log(raw
+turnover): mean **−1.667**, median **−1.184**, range −8.782 to 1.165. The
+same statistic — log of secondary-only turnover, zero-turnover
+observations excluded exactly as his specification excludes them — computed
+over this chapter's ten measured assets: mean **−2.581**, median **−2.025**,
+range −4.948 to −0.245 (n=10, from the per-asset figures in
+`docs/findings.md` §2).
+
+| | Mafrur (2026), raw turnover, log | This chapter, secondary-only turnover, log |
+|---|---|---|
+| n | 46 token-months | 10 assets |
+| Mean | −1.667 | −2.581 |
+| Median | −1.184 | −2.025 |
+
+This is not a matched comparison — different tokens (only BUIDL, OUSG,
+USTB, and the unmeasured-here PAXG overlap both samples), a different
+window, and independent data provenance — and is not presented as one. Read
+as two independent measurements of a related universe, the gap is
+directionally consistent with the conflation Mafrur (2026) names as
+unresolved in his own figure: an uncorrected mint/redeem component would be
+expected to push a raw-turnover distribution higher than a secondary-only
+one drawn from a similar population, which is what is observed. The one
+data point that *is* directly matched is qualitative rather than numeric:
+Mafrur's own text describes BUIDL as showing *"modest participation breadth
+and uneven activity intensity"* (his §4.1); this chapter attaches an exact
+number to that same asset — the 10.8x above.
+
 ### 4.3 RQ1 (continued) — assets with zero secondary activity
 
 ZTLN, RCOIN, ATT, and CGT recorded zero holder-to-holder transfers in the
@@ -772,6 +804,42 @@ refused the scan partway, §4.5), so its previous flat reading stands
 unconfirmed. No exclusion applies to BUIDL, so its figure is not expected to
 move — an expectation, not a verification.
 
+### 4.7a A supplementary exploratory regression, and why it is not a panel
+
+Mafrur (2026) tests whether holder breadth and size predict liquidity with
+a true panel: asset-class and month fixed effects over his 46–54
+token-month observations. This chapter's own data, as collected, is a
+single cross-section per asset rather than a time series of holder counts
+and asset values at each of the six trend windows — reconstructing the
+latter would require additional per-window data engineering not completed
+in this draft. What can be reported honestly with what is already computed
+is a simple cross-sectional OLS, over the nine assets with strictly
+positive secondary-only turnover (the same log-turnover-defined subset as
+§4.2a's comparison):
+
+$$\log(\text{Turnover}_i) = \alpha + \beta_1 \log(\text{Supply}_i) + \beta_2 \log(\text{Holders}_i) + \varepsilon_i$$
+
+| | Coefficient | Std. error | t |
+|---|---|---|---|
+| Constant | −4.673 | 4.345 | −1.08 |
+| log(Supply) | 0.256 | 0.222 | 1.15 |
+| log(Holders) | −0.432 | 0.313 | −1.38 |
+
+n = 9, degrees of freedom = 6, R² = 0.494. **Neither coefficient is
+statistically distinguishable from zero** at conventional levels — with 6
+degrees of freedom, nothing short of a very large effect could be. This
+result is reported for transparency, not as a finding: it neither confirms
+nor contradicts Mafrur (2026)'s result that log holders predicts liquidity
+(significant in his active-month specification) or that log size does not
+(his H3, which this regression's point estimate is at least directionally
+consistent with). The negative point estimate on log(holders) — the
+opposite sign from Mafrur's significant positive one — is noted rather
+than interpreted, since a sample this small cannot distinguish a real
+reversal from noise. Extending this chapter's six monthly windows to a
+finer granularity (weekly, from already-cached transfer data rather than
+new RPC collection) to build a properly-powered panel is the natural next
+step and is future work, not attempted here.
+
 ---
 
 ## 5. Discussion and Limitations
@@ -878,6 +946,15 @@ architectural completeness and cross-source reconciliation, have been tested
 only against documented response shapes because API access was either
 unavailable (rwa.xyz's API is gated behind an Enterprise-tier commercial
 plan with no published price) or unused at time of writing.
+
+**§4.7a's regression is a nine-observation cross-section, not a panel.**
+Unlike Mafrur (2026)'s fixed-effects estimation over 46–54 token-months,
+this chapter's holder and supply data were collected as a single snapshot
+per asset rather than at each of the six trend windows, so no time
+dimension is available for that specific test without further data
+engineering. Both coefficients reported there are statistically
+indistinguishable from zero and should be read as such, not as evidence
+for or against H2/H3.
 
 ---
 
