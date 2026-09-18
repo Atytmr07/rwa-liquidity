@@ -60,6 +60,25 @@ argument is testable, and it has rarely been tested directly against
 transaction-level, on-chain data rather than against reported market values
 or aggregator-supplied summary statistics.
 
+Mafrur (2026) tests it directly against on-chain activity and names the
+limitation this chapter is built to close: on-chain transfers are not
+equivalent to economic trades, since a transfer may record a subscription, a
+redemption, a treasury movement, or custodial rebalancing rather than a
+trade between two investors. That paper states the conflation as an open
+measurement problem rather than resolving it, and measures raw transfer
+turnover throughout. This chapter closes that specific gap by classifying
+every transfer event individually rather than aggregating first and
+caveating second: for BlackRock's BUIDL, the largest fund in this chapter's
+sample, 696 of 731 transfers in a single 30-day window were issuance, not
+trading, so raw turnover overstates the fund's actual secondary-market
+activity by a factor of 10.8. The correction is asset-specific rather than a
+fixed discount — §4.2 reports a factor as high as 39 elsewhere in the
+sample — and it is not free: §4.5 reports the one asset class this chapter's
+verifiable, keyless method cannot reach, which happens to be the class
+(gold-backed tokens) Mafrur's own results find most liquid. That is a real
+cost of verifiability, stated here rather than left for a reader to
+discover in the limitations section.
+
 ### 1.2 The measurement problem
 
 Every transfer of an ERC-20 token — the standard almost all tokenized RWA
