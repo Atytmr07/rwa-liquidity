@@ -267,6 +267,42 @@ public RPC endpoint refused a full-history scan after sustained attempts.
 Its figures above are its last successful measurement, not a live read —
 disclosed here rather than silently substituted.
 
+### 3.5 A supplementary exploratory regression, and why it is not a panel
+
+Mafrur (2026) tests H2/H3 (holder breadth and size as predictors of
+liquidity) with a true panel: asset-class and month fixed effects over 46–54
+token-month observations. This paper's own data, as collected, is a single
+cross-section per asset rather than a time series of holder counts and
+asset values at each of the six trend windows — reconstructing that would
+require additional per-window data engineering not completed here. What
+can be reported honestly with what is already computed is a simple
+cross-sectional OLS, in the same spirit as Mafrur's own descriptive-first
+approach, over the nine assets with strictly positive secondary-only
+turnover (the same log-turnover-defined subset used in Table 1):
+
+$$\log(\text{Turnover}_i) = \alpha + \beta_1 \log(\text{Supply}_i) + \beta_2 \log(\text{Holders}_i) + \varepsilon_i$$
+
+| | Coefficient | Std. error | t |
+|---|---|---|---|
+| Constant | −4.673 | 4.345 | −1.08 |
+| log(Supply) | 0.256 | 0.222 | 1.15 |
+| log(Holders) | −0.432 | 0.313 | −1.38 |
+
+n = 9, degrees of freedom = 6, R² = 0.494. **Neither coefficient is
+statistically distinguishable from zero** at conventional levels — with 6
+degrees of freedom, nothing short of a very large effect could be. This
+result is reported for transparency, not as a finding: it neither confirms
+nor contradicts Mafrur (2026)'s H2 (log holders positive and significant
+in his active-month specification) or H3 (log size insignificant, which
+this regression's point estimate is at least directionally consistent
+with). The negative point estimate on log(holders) — the opposite sign
+from Mafrur's — is noted rather than interpreted, since a sample this
+small cannot distinguish a real reversal from noise. A properly-powered
+version of this test, with per-window holder and supply reconstruction
+extending this paper's six monthly windows to a finer (e.g. weekly)
+granularity from already-cached transfer data, is the natural next step
+and is not attempted here under this draft's time budget.
+
 ---
 
 ## 4. Limitations
@@ -293,6 +329,13 @@ disclosed here rather than silently substituted.
   differently-sourced series.
 - **Two of the adapter's five source integrations are unverified against
   live third-party APIs** (rwa.xyz, Dune Analytics used only as noted in §3.4).
+- **§3.5's regression is a nine-observation cross-section, not a panel.**
+  Unlike Mafrur (2026)'s fixed-effects estimation over 46–54 token-months,
+  this paper's holder and supply data were collected as a single snapshot
+  per asset rather than at each of the six trend windows, so no time
+  dimension is available for that specific test without further data
+  engineering. Both coefficients reported there are statistically
+  indistinguishable from zero and should be read as such.
 
 ---
 
