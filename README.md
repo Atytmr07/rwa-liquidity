@@ -9,6 +9,15 @@ it ingests from multiple sources, normalizes to one schema, and computes a
 documented set of liquidity metrics whose outputs are reproducible and traceable
 back to the raw records they came from.
 
+> **Start here:** the research write-up is
+> **[`docs/ssrn-working-paper.md`](docs/ssrn-working-paper.md)** — what the
+> method is, what it measured across sixteen tokenized RWAs, and what it
+> cannot reach. Per-asset tables are in
+> [`docs/findings.md`](docs/findings.md), the metric definitions in
+> [`docs/methodology.md`](docs/methodology.md), and the reasoning behind
+> every non-obvious design choice (including the corrections made along the
+> way) in [`DECISIONS.md`](DECISIONS.md).
+
 ## What it found
 
 Measured against Ethereum mainnet with no API key. Sixteen tokenized
@@ -60,7 +69,10 @@ and `docs/findings.md` §5a/§7b for how that was found and fixed. Read broadly:
 tokenization did not broaden ownership on this sample, and the one asset that
 looked like an exception was a measurement artifact, not a market one.
 
-Full write-up, including the assets the method cannot measure and why, in
+The paper-length treatment of these results, including the comparison against
+the closest prior study, is in
+**[`docs/ssrn-working-paper.md`](docs/ssrn-working-paper.md)**; the full
+per-asset tables and the assets the method cannot measure are in
 **[`docs/findings.md`](docs/findings.md)**.
 
 ## Try it in two commands

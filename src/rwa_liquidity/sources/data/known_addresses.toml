@@ -24,7 +24,7 @@
 # `exclude` parameter) -- this narrows which holders are counted, it does
 # NOT shrink the denominator those counts are divided by; every share-valued
 # metric still divides by the asset's full reconstructed total supply
-# (`docs/thesis-chapter-draft.md` SS3.3 has the formal statement and the
+# (`docs/methodology.md` SS2.4-2.6 has the formal statement and the
 # ZTLN entry below has the case that caught this getting stated backwards in
 # an earlier draft). `issuer_addresses` are treasury/distributor addresses
 # whose transfers should be classified as primary rather than secondary (see
@@ -280,7 +280,7 @@ excluded_contracts = [
 issuer_addresses = []
 notes = """
 Checked 2026-09-01. ZTLN's headline figure everywhere in this project's
-narrative docs (README, findings.md SS3, thesis-chapter-draft.md SS4.3) is
+narrative docs (README, findings.md SS3, ssrn-working-paper.md SS3.2) is
 "$150m supply, two holders, no trading in its entire history." One of those
 two addresses, holding 100,011,201 of 150,000,000 ZTLN (66.7% of supply), is
 Etherscan-labeled `Balancer: Vault` -- the shared vault contract behind every
@@ -299,7 +299,7 @@ no Etherscan label) is unaffected. Quantified impact (30-day window ending
 
 Every share-valued metric in this package divides by the token's full
 reconstructed total supply, never by a re-summed total of the remaining
-(post-exclusion) holders -- see `docs/thesis-chapter-draft.md` SS3.3, which
+(post-exclusion) holders -- see `docs/methodology.md` SS2.4-2.6, which
 had this backwards in an earlier draft and was corrected against this exact
 case. So excluding the vault does not renormalize ZTLN down to "one investor,
 therefore 100% concentrated": it correctly reports that only one-third of
@@ -308,7 +308,7 @@ nothing about the other two-thirds rather than assuming it is either
 maximally concentrated or perfectly diffuse. The exclusion does not soften
 ZTLN's illiquidity finding -- the confirmed investor has still never traded
 -- but it does soften the "no trading in its entire history" framing used in
-README/findings.md SS3/thesis-chapter-draft.md SS4.3: that is true of the
+README/findings.md SS3/ssrn-working-paper.md SS3.2: that is true of the
 ZTLN token itself, but says nothing about whether Balancer LP shares
 representing a claim on the pooled ZTLN have traded, which this method
 cannot see. Both narrative claims should be corrected to distinguish "the

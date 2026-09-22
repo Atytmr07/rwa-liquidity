@@ -294,7 +294,7 @@ which column it is read from.
 **ZTLN is the one that changes the narrative, not just the number.** Every
 metric in this package divides by an asset's full reconstructed total
 supply, never by a re-summed total of the remaining post-exclusion holders
-(`docs/thesis-chapter-draft.md` §3.3) -- so excluding the Balancer vault does
+(`docs/methodology.md` §2.4-2.6) -- so excluding the Balancer vault does
 not turn ZTLN's one remaining confirmed investor into "100% concentrated by
 default." It correctly reports that the confirmed investor holds **33.3% of
 total supply**, and says nothing at all about the other 66.7%, which sits in

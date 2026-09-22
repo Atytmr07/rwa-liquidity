@@ -215,7 +215,7 @@ is one redundant write.
 ceiling, was measured once through Dune Analytics over the published 30-day
 window, with the primary/secondary rules re-expressed in SQL. It is **not**
 added to the live pipeline; the numbers live in `docs/findings.md` §7a and
-`docs/thesis-chapter-draft.md` §4.5a as a control case, labelled as coming from
+`docs/ssrn-working-paper.md` §3.4 as a control case, labelled as coming from
 a different code path.
 
 **Alternatives:** leave PAXG unmeasured and keep the boundary as a pure
@@ -317,7 +317,7 @@ someone doing the manual lookup and wiring it in -- this closes that gap for
 the three assets checked. It does not close it for the rest of the registry,
 and it found no `issuer_addresses` yet for any asset -- see the file's own
 `notes` fields for what each entry does and does not establish, and
-`docs/thesis-chapter-draft.md` §4.4 for a related correction: an earlier draft
+`docs/findings.md` §8 for a related correction: an earlier draft
 overclaimed that one historical zero-address mint rules out treasury-routed
 issuance for the rest of an asset's history, which does not follow and has
 been rewritten.

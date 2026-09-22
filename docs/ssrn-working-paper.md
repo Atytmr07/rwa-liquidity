@@ -381,5 +381,5 @@ reach but an independently-verifiable one, at present, cannot.
   Index, citing U.S. DOJ & FTC, *Merger Guidelines* § 2.1 (2023).
 
 *Full methodology, per-asset tables, and every caveat this working paper
-condenses: `docs/thesis-chapter-draft.md`, `docs/findings.md`,
-`docs/methodology.md` in the linked repository.*
+condenses: `docs/methodology.md`, `docs/findings.md`,
+`docs/literature-review.md` in the linked repository.*
