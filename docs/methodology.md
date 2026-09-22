@@ -22,7 +22,7 @@ economically different things hide behind it:
 |---|---|---|
 | `mint` | Tokens created and issued to an investor | The investor bought **from the issuer**. No secondary market involved. |
 | `burn` | Tokens returned to the issuer and destroyed | The investor redeemed. Again no secondary market. |
-| `secondary` | One holder transferred to another | Actual trading. |
+| `secondary` | Neither end of the transfer is a burn address or a confirmed issuer address | Not issuance. Consistent with trading, but see §1.1. |
 | `unclassified` | Could not be determined | Unknown. |
 
 A tokenized fund that only mints and redeems **has no secondary market**,
@@ -34,13 +34,46 @@ obscures it.
 
 Every volume-based metric therefore takes a **mode**:
 
-* `secondary_only` — **the default.** Counts only holder-to-holder transfers.
+* `secondary_only` — **the default.** Counts only transfers that are not
+  issuance or redemption.
 * `primary_only` — counts issuance and redemption only.
 * `all` — counts everything.
 
 `secondary_only` is the default because the error it produces runs in the safe
 direction. A careless user under-reports liquidity rather than over-reporting
 it, which is the right way round for published work.
+
+### 1.1 What `secondary` does and does not establish
+
+`secondary` is defined by exclusion: neither end of the transfer is a burn
+address, and neither is an issuer address that has been configured and
+confirmed. That is a weaker statement than "two investors traded with each
+other," and the difference matters when the figure is quoted.
+
+A `secondary` transfer may still be any of the following, none of which is a
+trade:
+
+* a treasury or operational movement by an issuer whose address is **not**
+  in `known_addresses.toml`, because nobody has identified and verified it yet;
+* a custody transfer, for instance an investor moving a position into or out
+  of a custodian's wallet;
+* wallet restructuring, where one entity moves its own holdings between
+  addresses it controls.
+
+Nothing in an `eth_getLogs` scan distinguishes those from a genuine
+holder-to-holder trade. Identifying them would need address-level entity
+resolution applied to transfers, which this package does not attempt. The
+`issuer_addresses` mechanism handles one slice of the problem, the
+issuer-side slice, and only for addresses that a block-explorer label or
+issuer documentation has confirmed by hand.
+
+**The correct reading, therefore, is that `secondary_only` measures
+non-issuance transfer activity, and that this is an upper bound on genuine
+secondary-market trading.** This cuts in a useful direction for the headline
+comparison: if the secondary-only figure is an upper bound on real trading,
+then the ratio between raw turnover and secondary-only turnover is a *lower*
+bound on how much raw transfer volume overstates real trading. An asset
+reported at 10.8x is overstated by at least that much, not at most.
 
 ### Why `unclassified` exists
 

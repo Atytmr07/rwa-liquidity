@@ -128,7 +128,7 @@ reported here rather than dropped for tidiness.
 **USYC overstates by 39x**, which is not a typo and is now the largest
 correction factor in the dataset by a wide margin -- BUIDL's much-quoted 10.8x
 was measured on a different window and is smaller. USYC moved 7.99 times its
-supply in 30 days under `all` mode; restricted to holder-to-holder trades, 0.20.
+supply in 30 days under `all` mode; restricted to non-issuance transfers, 0.20.
 Of its 100 transfers, 78 were mint or burn. A tokenized treasury product whose
 raw on-chain volume reads as eight full turns of supply per month, and whose
 actual secondary trading is a fifth of one turn, is the clearest single example
@@ -147,9 +147,11 @@ two of fourteen sit outside even the looser 1,800 standard.
 
 ## 3. Four of ten had no secondary market at all
 
-ZTLN, RCOIN, ATT and CGT recorded **zero** holder-to-holder transfers in the
+ZTLN, RCOIN, ATT and CGT recorded **zero** non-issuance transfers in the
 window. Their dormancy is 100%: every token outstanding sits with an address that
-did not move it.
+did not move it. For these four the distinction drawn in
+`docs/methodology.md` §1.1 does not bite: a count of zero is zero whether or
+not a non-issuance transfer would have been a genuine trade.
 
 ZTLN is the starkest. It has **$150m of supply, two holders, and no transfers in
 its entire history** beyond the twelve that created it. Read from a TVL dashboard

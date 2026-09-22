@@ -19,6 +19,16 @@ Two rules, applied in order:
 Anything the rules cannot decide is labelled `unclassified` rather than assumed.
 Assuming secondary would overstate liquidity, which is the error this package
 exists to prevent.
+
+`SECONDARY` is defined by exclusion, and that is weaker than "two investors
+traded". Neither end of the transfer is a burn address and neither is a
+*confirmed* issuer address, but the label still covers an issuer's own
+operational movement from an address nobody has identified yet, a custody
+transfer, and wallet restructuring inside a single entity. Separating those
+out would need address-level entity resolution applied to transfers, which
+this package does not attempt. Read a `SECONDARY` total as non-issuance
+transfer activity, an upper bound on genuine secondary-market trading; see
+`docs/methodology.md` §1.1.
 """
 
 from __future__ import annotations

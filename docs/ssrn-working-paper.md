@@ -23,11 +23,14 @@ individual transfer as issuance, redemption, or secondary trade via the
 ERC-20 zero-address convention, and that verifies every reconstructed
 holder-balance distribution against the token contract's own `totalSupply()`,
 this paper measures ten real, currently-trading tokenized RWA products.
-Raw transfer volume is found to overstate secondary-market liquidity by a
-factor of 1.0x to 10.8x depending on the asset (up to 39.0x on a widened
-fourteen-asset registry), four of ten assets record no peer-to-peer trading
-at all across six consecutive monthly windows, and holder concentration is
-extreme and largely static over the same period. The method's own
+Raw transfer volume is found to overstate non-issuance transfer activity by
+a factor of 1.0x to 10.8x depending on the asset (up to 39.0x on a widened
+fourteen-asset registry). Because the adjusted measure is itself an upper
+bound on genuine investor-to-investor trading, as §2.2 sets out, these
+factors are lower bounds on the overstatement rather than point estimates
+of it. Four of ten assets record no non-issuance transfers at all across six
+consecutive monthly windows, and holder concentration is extreme and largely
+static over the same period. The method's own
 verification step is shown to matter as much as its transfer-side
 classification: excluding a DeFi contract miscounted as a single large
 investor is shown, in one case, to invert the direction of a previously
@@ -130,6 +133,25 @@ transfers to or from it are also treated as primary. Anything the rules
 cannot decide is labelled unclassified rather than assumed secondary,
 because assuming secondary is the specific error this method exists to
 prevent.
+
+**What this classification does not establish.** The `secondary` label is
+defined by exclusion: neither end of the transfer is a burn address, and
+neither is a confirmed issuer address. That is weaker than establishing
+that two investors traded. A `secondary` transfer may also be an issuer's
+own operational movement from an address nobody has identified yet, a
+custody transfer into or out of a custodian's wallet, or wallet
+restructuring within a single entity. An `eth_getLogs` scan cannot
+distinguish those from a genuine trade; doing so would require
+address-level entity resolution applied to transfers rather than, as here,
+to holder balances alone. The measure is therefore reported as
+**non-issuance transfer activity**, and read as an upper bound on genuine
+secondary-market trading.
+
+That direction is worth stating explicitly, because it does not weaken the
+paper's central comparison. If the adjusted figure is an upper bound on
+real trading, the ratio between raw and adjusted turnover is a *lower*
+bound on how far raw transfer volume overstates real trading. BUIDL's
+10.8x is a floor, not a ceiling.
 
 ### 2.3 Holder-side verification
 
@@ -309,6 +331,12 @@ and is not attempted here under this draft's time budget.
 
 - **On-chain visibility is not market visibility.** Off-chain settlement
   is invisible, so an actively traded asset can read as dormant.
+- **A non-issuance transfer is not necessarily a trade** (§2.2). Custody
+  movements, wallet restructuring within one entity, and operational
+  transfers by issuers whose addresses have not been identified all survive
+  the classification and are counted as `secondary`. Every figure reported
+  under that label is an upper bound on genuine investor-to-investor
+  trading, not a measurement of it.
 - **Addresses are not investors**, beyond what §2.3's audit has checked.
   An asset absent a confirmed exclusion has not been verified clean, only
   unexamined.
@@ -343,9 +371,10 @@ and is not attempted here under this draft's time budget.
 
 Measured directly from public Ethereum data, without any commercial data
 license, ten real tokenized RWA products show that raw transfer volume
-overstates secondary-market liquidity by a factor that varies by asset
-(1.0x–10.8x on this sample, up to 39.0x on a widened registry), that four
-of ten have no secondary trading at all across a six-month observation
+overstates non-issuance transfer activity by a factor that varies by asset
+(1.0x–10.8x on this sample, up to 39.0x on a widened registry, and each of
+those a lower bound on the overstatement of genuine trading), that four
+of ten have no non-issuance transfers at all across a six-month observation
 period, and that holder concentration is both extreme and largely static —
 with the one exception itself being a finding: a previously-reported
 concentration trend had the wrong sign until an unexcluded DeFi contract

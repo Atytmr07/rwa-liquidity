@@ -45,10 +45,17 @@ two-thirds sits in a pool this method cannot see inside. See
 | Turnover | 0.2015 | **0.0187** |
 | Dormancy | 3.0% | **96.2%** |
 
-731 transfers, of which **696 were issuance and 32 were actual trading**. Raw
-transfer volume overstates this fund's secondary liquidity by **10.8x** --
+731 transfers, of which **696 were issuance and 32 were not**. Raw transfer
+volume overstates this fund's non-issuance activity by **10.8x** --
 and the factor is asset-specific: between 1x and **39x** across the widened
 set (Circle's USYC), so it cannot be corrected with a scalar.
+
+Those 32 are measured as *not issuance*, which is a weaker claim than *32
+trades between investors*: a transfer can also be a custody movement or an
+issuer's own operational transfer from an address nobody has identified yet.
+That makes the 10.8x a lower bound on the real overstatement rather than an
+upper one. [`docs/methodology.md`](docs/methodology.md) §1.1 sets out what
+the classification does and does not establish.
 
 **Eleven of the fourteen** exceed an HHI of 2,500, the threshold the 2010 US
 Horizontal Merger Guidelines call highly concentrated; **twelve of fourteen**
