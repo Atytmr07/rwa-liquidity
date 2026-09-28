@@ -59,7 +59,7 @@ _DIGEST_LENGTH: Final = 16
 #: scan caches one file per `eth_getLogs` window) still keeps each directory
 #: small, without adding more path depth than an interactive user inspecting
 #: the cache by hand would want. A change to this value changes every
-#: existing entry's path; see `docs/DECISIONS.md` before changing it.
+#: existing entry's path, so an existing cache must be migrated with it.
 SHARD_PREFIX_LENGTH: Final = 2
 
 ParamValue = str | int | float | bool | None

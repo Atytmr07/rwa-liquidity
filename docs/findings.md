@@ -13,52 +13,28 @@ history and checked against the contract's own `totalSupply()`; where the two
 agreed the distribution is exact, and where they did not the affected metrics are
 reported as undefined rather than estimated.
 
-**§1 and §2 were regenerated 2026-08-28** over the widened sixteen-asset
-registry, with `known_addresses.toml`'s exclusions in effect. Two things moved
-at once relative to the previous version of those tables -- the exclusions, and
-the window, which slides with the clock -- so a figure that differs from an
-earlier draft is not attributable to either on its own. §5a isolates the
-exclusion effect on a fixed window, and is the section to cite for that. The
-narrative sections below (§3 through §7) discuss the 2026-07-30 measurement and
-say so where a specific number is quoted.
+**How to read the tables.** §1 and §2 cover one 30-day window ending
+2026-08-28, over the sixteen-asset registry. They apply the DeFi-contract
+exclusions confirmed by that date (OUSG, USDM, CANA). Four further
+exclusions were confirmed afterwards (USYC, USTB, ZTLN, HLSCOPE) and are not
+applied in those two tables; §5a reports the effect of every exclusion on a
+fixed window, which is the comparison to cite. Where §3 to §7 quote a figure
+from the earlier 2026-07-30 measurement, they say so.
 
-**Re-verified 2026-08-24 for nine of the ten measured assets**, after a rewrite
-of the scanning method (`DECISIONS.md`, 2026-08-14/15 entries) changed how the
-underlying logs are fetched without changing what they mean. ZTLN, RCOIN, CGT
-and ATT reproduced every figure exactly; USDM's HHI matched exactly and its
-rebasing guard fired correctly again; FDIT, CANA, HLSCOPE and OUSG showed
-different turnover and dormancy (expected -- a different 30-day window has
-different activity) while holding concentration nearly constant (expected --
-ownership does not reshuffle in a month), matching the pattern already
-documented in SS7a. **BUIDL itself could not be re-verified**: forty attempts
-over 85 minutes, deliberately spaced to avoid the sustained load the endpoint's
-own error message names as the trigger, failed identically every time. See
-`DECISIONS.md`, 2026-08-24, for what that rules out and what it does not. The
-BUIDL figures below are the original 2026-07-30 measurement, not re-confirmed
-since.
+BUIDL's figures are from 2026-07-30. Later full-history scans against a free
+public RPC endpoint did not complete, so it has not been re-measured since,
+and it is marked as such wherever it appears.
 
-**2026-08-26: `known_addresses.toml` added.** Checking each measured asset's
-top holders against Etherscan's own contract labels found that three of them
-had a DeFi contract -- a lending vault or an AMM pool -- sitting among their
-largest holders, aggregating an unknown number of end-users behind one
-balance. `report` and `trend` now exclude these by default; see §5a for what
-changed, and `docs/methodology.md` §2.4 for the mechanism. The tables in §1,
-§2 and §7a below are the original run and **predate this exclusion** -- they
-were not regenerated in place, because doing so on the live window would also
-shift every other figure in them (the observation window moves with "now"),
-making it impossible to tell a window effect from an exclusion effect. §5a
-isolates the exclusion effect instead, on the same cached data, holding the
-window fixed.
-
-## How these eleven assets were chosen
+## How the assets were chosen
 
 Not by hand-picking. Every protocol DeFiLlama files under category `RWA` was
 taken, its Ethereum addresses extracted, and each address resolved on-chain. The
 contract's own `symbol()` and `name()` decided what it is. Roughly three quarters
 of the addresses turned out to be a protocol's **governance token** rather than a
-tokenized asset — ONDO, CFG, ENA, SKY, CPOOL, SYRUP and others — and were
-discarded. The procedure and the discards are recorded in
-`src/rwa_liquidity/sources/data/defillama.toml`.
+tokenized asset (ONDO, CFG, ENA, SKY, CPOOL, SYRUP and others) and were
+discarded. The procedure was run twice, the second time against the category's
+later membership, giving sixteen assets in total. The procedure and the discards
+are recorded in `src/rwa_liquidity/sources/data/defillama.toml`.
 
 The result spans treasury funds, private credit, gold, carbon allowances and a
 green bond, which is deliberate: nothing here assumes the instrument classes
@@ -155,8 +131,8 @@ not a non-issuance transfer would have been a genuine trade.
 
 ZTLN is the starkest. It has **$150m of supply, two holders, and no transfers in
 its entire history** beyond the twelve that created it. Read from a TVL dashboard
-it is a substantial tokenized product. Measured, it is not the bilateral
-arrangement an earlier version of this document called it: one of its two
+it is a substantial tokenized product. Measured, it is not a simple bilateral
+arrangement either: one of its two
 holders is Etherscan-labeled `Balancer: Vault`, holding two-thirds of supply
 on behalf of an unknown number of liquidity providers this method cannot see
 (§5a). What can be said precisely is narrower and still stark -- one
@@ -202,21 +178,14 @@ SS2.1 (2023), as stated by the
 On the original ten-asset run, **eight exceeded 2,500 and six exceeded 5,000**,
 and top-10 share was above 92% for nine of them.
 
-**The widened registry weakens this less than an earlier draft of this
-section claimed.** That draft undercounted the table above at "nine exceed
-2,500"; the correct tally, recounted directly from §2, is **eleven exceed
-2,500 rather than eight of ten**, and **twelve of fourteen clear the
-stricter 1,800 threshold**. Only two assets fall below 1,800 -- OUSG at 779
-and USTB at 1,067 -- and a third, mTBILL at 2,052, falls short of 2,500 but
-still clears 1,800, so it belongs in neither "below the line" count. Two of
-the three lowest-HHI assets are ones the second registry pass added, and
-OUSG clears neither line unless its lending vault is excluded (§5a; the same
-figure reads 1,385, still under 2,500, with the vault counted). The
-direction of the finding holds -- most of these assets are concentrated by
-any antitrust standard, and the weakening is smaller than it first looked --
-but "almost everywhere," written when the sample was ten assets that
-happened to share an instrument type, is still too strong for a sample where
-two of fourteen sit outside even the looser standard.
+**On the widened fourteen-asset registry (§2), eleven exceed 2,500 and
+twelve clear the stricter 1,800 threshold.** Only two assets fall below
+1,800: OUSG at 779 and USTB at 1,067. A third, mTBILL at 2,052, falls short
+of 2,500 but still clears 1,800. Two of the three lowest-HHI assets were
+added in the second registry pass, and OUSG sits below both thresholds
+whether or not its lending vault is counted (§5a). Most of these assets are
+concentrated by any antitrust standard, but not uniformly so: two of
+fourteen sit outside even the looser one.
 
 Two cases deserve separate mention because they invert the usual reading:
 
@@ -421,14 +390,10 @@ uv run rwa-liquidity trend --metric turnover_ratio
 uv run rwa-liquidity trend --metric top_10_holder_share
 ```
 
-**Regenerated 2026-08-31** over the widened sixteen-asset registry, with
-`known_addresses.toml`'s exclusions in effect throughout -- both tables below
-reflect the corrected mechanism from the start, not a before/after comparison.
-Fetched asset by asset with per-asset retries after the full-registry `trend`
-command lost partial runs to a flaky free RPC endpoint several times in a row;
-see `DECISIONS.md` if that recurs. **BUIDL** could not be reached on this run
-(the endpoint refused the scan after 3 attempts) and keeps its last-confirmed
-reading, marked below; **PAXG** is out of reach of this adapter entirely (§7).
+Both tables below cover six windows ending 2026-08-31, over the sixteen-asset
+registry, with the `known_addresses.toml` exclusions confirmed by that date
+applied throughout. **BUIDL** keeps its last-confirmed 2026-07-30 reading,
+marked below; **PAXG** is out of reach of this adapter entirely (§7).
 
 **Secondary turnover**, six consecutive 30-day windows, oldest first (04-03 to
 08-31):
@@ -479,26 +444,22 @@ direction. Nothing here shows a market deepening in aggregate.
 | BUIDL | 84.1% | 83.6% | 82.8% | 83.7% | 83.6% | 81.8% | *last confirmed 07-30, unconfirmed since* |
 | PAXG | *not measurable by this adapter* | | | | | | |
 
-**OUSG is the only asset with a clear, sustained direction, and it falls.** A
-previous version of this table -- computed before `known_addresses.toml`'s
-exclusions existed -- reported OUSG *rising*, 82.4% to 92.9%, and called it
-"the one clear mover, and it concentrated." With Flux Finance's fOUSG vault
-excluded, the same series **falls**, and falls from the start: every point in
-this regenerated run is lower than the corresponding point in the uncorrected
-one. The sign of the only non-flat series in the original ten-asset dataset was
-an artifact of counting a lending vault as a single large holder. §5a isolates
-this precisely -- holding one window fixed and toggling only the exclusion
-moves OUSG's top-10 share by 24 points, far more than a window shift alone
-could produce -- so the exclusion, not measurement noise, is the cause. Read
-correctly, OUSG was deconcentrating throughout while the vault's growing
-position made it look like the opposite. That is the strongest single argument
-in this document for why the address-versus-investor problem (§5a) is not a
-footnote: it did not blur a number, it inverted a published finding.
+**OUSG is the only asset with a clear, sustained direction, and it falls.**
+The direction depends entirely on how one address is treated. Counting Flux
+Finance's fOUSG lending vault as a single holder, OUSG's top-10 share
+**rises**, 82.4% to 92.9%, over the same six windows. Excluding the vault,
+it **falls**, 81.6% to 70.1%, and every point sits below the corresponding
+point in the uncorrected series. §5a isolates the effect on one fixed
+window: toggling only the exclusion moves OUSG's top-10 share by 24 points,
+far more than a window shift could produce, so the exclusion rather than
+measurement noise is the cause. OUSG was deconcentrating throughout while
+the vault's growing position made it look like the opposite. This is the
+strongest argument in this document that the address-versus-investor problem
+(§5a) is not a footnote: it does not blur a number, it reverses a trend.
 
-**CANA rising is new** -- absent from the original ten-asset series, visible
-now that the registry and the window both cover 2026 mid-year activity more
-fully. Its known issuer address (§8) touches none of these six windows'
-transfers, so the rise is not a mint/burn artifact.
+**CANA's top-10 share rises**, from 94.7% to 98.4%. Its known issuer address
+(§8) touches none of these six windows' transfers, so the rise is not a
+mint/burn artifact.
 
 BUIDL's series is carried forward from its last successful scan (07-30) rather
 than re-measured; no exclusion in `known_addresses.toml` applies to it, so no

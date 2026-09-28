@@ -24,9 +24,8 @@
 # `exclude` parameter) -- this narrows which holders are counted, it does
 # NOT shrink the denominator those counts are divided by; every share-valued
 # metric still divides by the asset's full reconstructed total supply
-# (`docs/methodology.md` SS2.4-2.6 has the formal statement and the
-# ZTLN entry below has the case that caught this getting stated backwards in
-# an earlier draft). `issuer_addresses` are treasury/distributor addresses
+# (`docs/methodology.md` SS2.4-2.6 has the formal statement, and the ZTLN
+# entry below shows why it matters). `issuer_addresses` are treasury/distributor addresses
 # whose transfers should be classified as primary rather than secondary (see
 # `classify_transfers`); CANA and CGT have confirmed entries, found by a
 # distributor-signature search -- see each asset's own notes.
@@ -299,9 +298,8 @@ no Etherscan label) is unaffected. Quantified impact (30-day window ending
 
 Every share-valued metric in this package divides by the token's full
 reconstructed total supply, never by a re-summed total of the remaining
-(post-exclusion) holders -- see `docs/methodology.md` SS2.4-2.6, which
-had this backwards in an earlier draft and was corrected against this exact
-case. So excluding the vault does not renormalize ZTLN down to "one investor,
+(post-exclusion) holders -- see `docs/methodology.md` SS2.4-2.6. So
+excluding the vault does not renormalize ZTLN down to "one investor,
 therefore 100% concentrated": it correctly reports that only one-third of
 total supply is confirmed to sit with an identified investor, and says
 nothing about the other two-thirds rather than assuming it is either

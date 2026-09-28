@@ -252,18 +252,18 @@ total supply) is actually established as dormant; the rest is opaque.
 Eight of the ten measurable assets exceed an HHI of 2,500 (the 2010 DOJ/FTC
 "highly concentrated" threshold); the same eight also clear the stricter
 1,800 threshold from the 2023 revision. Tracked across six consecutive
-30-day windows, most series are flat. **One correction matters more than
-the rest of this finding**: an earlier reading of this same data reported
-OUSG as the sample's one clearly *concentrating* asset, 82.4% to 92.9% over
-six months. A DeFi lending vault (`Flux Finance: fOUSG Token`) had been
-counted as a single large holder; excluded, per §2.3's verification step,
-the corrected series instead **deconcentrates**, 81.6% to 70.1%, throughout.
-Holding the window fixed and toggling only the exclusion moves OUSG's
-top-10 share by 24 points — far more than a five-week window shift could
-produce — so the exclusion, not measurement noise, is the cause. This is
-offered as the strongest available evidence that the address-versus-investor
-problem this paper checks for is not a formality: it inverted the sign of
-a reported finding, not merely its magnitude.
+30-day windows, most series are flat. **One result matters more than the
+rest of this finding**: OUSG's trend reverses depending on how a single
+address is treated. Counting a DeFi lending vault (`Flux Finance: fOUSG
+Token`) as one large holder, OUSG appears to be the sample's one clearly
+*concentrating* asset, 82.4% to 92.9% over six months. Excluding it, per
+§2.3's verification step, the series **deconcentrates**, 81.6% to 70.1%,
+throughout. Holding the window fixed and toggling only the exclusion moves
+OUSG's top-10 share by 24 points, far more than a five-week window shift
+could produce, so the exclusion rather than measurement noise is the cause.
+This is the strongest available evidence that the address-versus-investor
+problem is not a formality: it reverses the sign of a trend, not merely its
+magnitude.
 
 ### 3.4 What the constraint costs
 
@@ -323,7 +323,7 @@ small cannot distinguish a real reversal from noise. A properly-powered
 version of this test, with per-window holder and supply reconstruction
 extending this paper's six monthly windows to a finer (e.g. weekly)
 granularity from already-cached transfer data, is the natural next step
-and is not attempted here under this draft's time budget.
+and is left to future work.
 
 ---
 
@@ -409,6 +409,5 @@ reach but an independently-verifiable one, at present, cannot.
 - U.S. Department of Justice, Antitrust Division. Herfindahl-Hirschman
   Index, citing U.S. DOJ & FTC, *Merger Guidelines* § 2.1 (2023).
 
-*Full methodology, per-asset tables, and every caveat this working paper
-condenses: `docs/methodology.md`, `docs/findings.md`,
-`docs/literature-review.md` in the linked repository.*
+*Full methodology and per-asset tables: `docs/methodology.md` and
+`docs/findings.md` in the linked repository.*

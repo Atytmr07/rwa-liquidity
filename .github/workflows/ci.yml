@@ -54,9 +54,9 @@ jobs:
         # floor on Windows. Not a full OS x version cross product -- that
         # doubles every job for coverage this project doesn't need, since the
         # risk a second OS actually catches is platform-specific dependency
-        # resolution (see the 2026-08-15 tzdata entry in DECISIONS.md: a
-        # dependency that arrived only as a side effect of an extra, invisible
-        # on Linux because the OS supplies what it was standing in for), not
+        # resolution (tzdata, for example: a dependency that arrived only as a
+        # side effect of an extra, invisible on Linux because the OS supplies
+        # what it was standing in for), not
         # interpreter-version behaviour. One Windows job catches that class of
         # bug; a second one on 3.13 would not catch a different class of it.
         include:

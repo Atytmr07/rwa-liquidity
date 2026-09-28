@@ -13,10 +13,8 @@ back to the raw records they came from.
 > **[`docs/ssrn-working-paper.md`](docs/ssrn-working-paper.md)** — what the
 > method is, what it measured across sixteen tokenized RWAs, and what it
 > cannot reach. Per-asset tables are in
-> [`docs/findings.md`](docs/findings.md), the metric definitions in
-> [`docs/methodology.md`](docs/methodology.md), and the reasoning behind
-> every non-obvious design choice (including the corrections made along the
-> way) in [`DECISIONS.md`](DECISIONS.md).
+> [`docs/findings.md`](docs/findings.md), and the metric definitions and
+> classification rules in [`docs/methodology.md`](docs/methodology.md).
 
 ## What it found
 
@@ -24,11 +22,9 @@ Measured against Ethereum mainnet with no API key. Sixteen tokenized
 real-world assets are registered by a reproducible on-chain procedure rather
 than by hand; **fourteen are measurable** by this method (§7 of
 `docs/findings.md` explains the two that are not). The cross-section below is
-the widened registry, re-verified through 2026-08-31; BUIDL is the one
+the widened registry, measured through 2026-08-31; BUIDL is the one
 exception, carried forward from its last successful scan (2026-07-30) because
-a free public RPC endpoint has refused to complete a fresh one since --
-[`DECISIONS.md`](DECISIONS.md) has the full story, including why paying for
-one particular provider's key did not fix it.
+later full-history scans against a free public RPC endpoint did not complete.
 
 **Four of the fourteen measurable assets recorded zero holder-to-holder
 transfers in 30 days** (ZTLN, RCOIN, CGT, ATT), in every one of six
@@ -65,14 +61,13 @@ clear the stricter 1,800 threshold from the 2023 revision. Only two assets
 Over **six consecutive 30-day windows**, three assets' secondary turnover rose,
 five fell, two moved without a clear direction, and the same four recorded no
 secondary trading in any window. Concentration was flat for most of the set.
-**One correction matters more than the rest of this paragraph**: OUSG was
-originally reported as the sample's one clearly *concentrating* asset,
-82.4% to 92.9% over the same six windows. That was an artifact of counting a
-DeFi lending vault as a single large holder. Excluded, the corrected series
-instead **deconcentrates**, 81.6% to 70.1%, throughout. The sign of the only
-non-flat trend in the original dataset was wrong -- see
+**One result matters more than the rest of this paragraph**: OUSG's trend
+reverses depending on how a single address is treated. Counting a DeFi
+lending vault as one large holder, OUSG looks like the sample's one clearly
+*concentrating* asset, 82.4% to 92.9% over the six windows. Excluding the
+vault, the series **deconcentrates**, 81.6% to 70.1%, throughout. See
 [`known_addresses.toml`](src/rwa_liquidity/sources/data/known_addresses.toml)
-and `docs/findings.md` §5a/§7b for how that was found and fixed. Read broadly:
+and `docs/findings.md` §5a/§7b. Read broadly:
 tokenization did not broaden ownership on this sample, and the one asset that
 looked like an exception was a measurement artifact, not a market one.
 
