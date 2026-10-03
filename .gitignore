@@ -1,0 +1,31 @@
+# Environments and secrets
+.env
+.env.local
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Local API response cache. The sample dataset under data/sample/ IS committed;
+# everything the cache layer writes at runtime is not.
+.rwa-cache/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,220 @@
+# Addresses that need treatment beyond the zero-address rule, per asset.
+#
+# excluded_contracts: contracts that hold the token on behalf of many end
+#   holders, such as pools, vaults, wrappers and bridges. They are left out of
+#   the retained holder population. Full-supply metrics still divide by total
+#   supply, and retained coverage is reported beside them
+#   (docs/methodology.md, section 2.4). The list is shared across assets.
+#
+# issuer_addresses: addresses that belong to the asset's own issuer, either in
+#   the issuer's published list of contracts or by the issuer's Etherscan
+#   label. Transfers to or from them are issuer-linked rather than residual.
+#   Transaction behaviour alone does not qualify an address.
+#
+# Etherscan labels and issuer documentation were checked between August and
+# October 2026. An asset with empty lists was checked and nothing qualified.
+
+schema_version = 1
+
+[[asset]]
+uid = "ethereum:0x7712c34205737192402172409a8f7ccef8aa2aec"  # BUIDL
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+No pooling contract among the largest holders, and no issuer address that
+Securitize documents or Etherscan labels. BUIDL moves across chains through
+Wormhole; no bridge contract appears among the largest holders or the most
+frequent senders to the zero address. Dividends are paid as newly minted
+tokens, so creation includes distributions (docs/methodology.md, section 1.2).
+"""
+
+[[asset]]
+uid = "ethereum:0x1b19c19393e2d034d8ff31ff34c81252fcbbee92"  # OUSG
+excluded_contracts = [
+    "0x1dD7950c266fB1be96180a8FDb0591F70200E018", # Etherscan: "Flux Finance: fOUSG Token"
+]
+issuer_addresses = [
+    # Listed by Ondo Finance at docs.ondo.finance/addresses.
+    "0x93358db73b6cd4b98d89c8f5f230e81a95c2643a", # OUSG_InstantManager
+    "0x2826989983e3a66f0622132d019c2ae173eb6a43", # OUSGInstantManager (legacy)
+    "0x72be8c14b7564f7a61ba2f6b7e50d18dc1d4b63d", # OUSG Recipient, for manual redemptions
+    "0xf16c188c2d411627d39655a60409ec6707d3d5e8", # OUSGManager (legacy)
+    "0x3501883a646f1f8417bcb62162372550954d618f", # CashManager (legacy)
+]
+notes = """
+Excluded: Flux Finance's fOUSG vault, a lending market that holds OUSG as
+collateral for its depositors (about a quarter of supply).
+
+Issuer addresses: the contracts Ondo lists for OUSG subscriptions and
+redemptions. A redemption moves OUSG to an instant manager in one transfer and
+burns it in the next; the OUSG Recipient receives OUSG for manual redemptions.
+0x3d85c41e1a24a970a93436bf6379f53317272d6c receives mints and distributes
+them, but Ondo does not list it and Etherscan does not label it, so it is not
+included.
+"""
+
+[[asset]]
+uid = "ethereum:0x01995a697752266d8e748738aaa3f06464b8350b"  # CANA
+excluded_contracts = [
+    "0x151f7c3fB28Bc6f858d67a5e298B7b4f57592b54", # Etherscan: "Uniswap V2: CANA-AJNA"
+    "0x000000000004444c5dc75cB358380D2e3dE08A90", # Etherscan: "Uniswap V4: Pool Manager"
+    "0x3154cf16ccdb4c6d922629664174b904d80f2c35", # Etherscan: "Base: Base Bridge"
+]
+issuer_addresses = [
+    "0xccadea5cc24204995a98daa056c37bd5207fd0c5", # Etherscan: "Maseer: Deployer"
+]
+notes = """
+Excluded: a CANA-AJNA Uniswap V2 pool, the Uniswap V4 Pool Manager, which
+holds the reserves of every V4 pool, and the Base bridge, which holds CANA on
+behalf of the owners of bridged CANA on Base.
+
+Issuer address: the issuer's distribution address, labelled "Maseer:
+Deployer".
+"""
+
+[[asset]]
+uid = "ethereum:0x59d9356e565ab3a36dd77763fc0d87feaf85508c"  # USDM
+excluded_contracts = [
+    "0x57F5E098CaD7A3D1Eed53991D4d66C45C9AF7812", # Etherscan: "Mountain Protocol: wUSDM Token"
+]
+issuer_addresses = []
+notes = """
+Excluded: Mountain Protocol's wUSDM wrapper, which holds USDM for wUSDM
+holders. USDM rebases, so its transfer ledger does not reconcile with
+totalSupply() and its holder metrics are withheld.
+"""
+
+[[asset]]
+uid = "ethereum:0xf5238462e7235c7b62811567e63dd17d12c2eaa0"  # CGT
+excluded_contracts = []
+issuer_addresses = [
+    "0x6522b05fe48d274f14559e0391be3675e6a1ac91", # Etherscan: "CACHE Gold: Old Backed Treasury"
+]
+notes = """
+Issuer address: the CACHE Gold treasury, inactive since October 2021.
+"""
+
+[[asset]]
+uid = "ethereum:0x136471a34f6ef19fe571effc1ca711fdb8e49f2b"  # USYC
+excluded_contracts = [
+    "0xdd82875f0840aad58a455a70b88eed9f59cec7c7", # Etherscan: "Usual: Treasury"
+]
+issuer_addresses = [
+    # Listed by Circle at developers.circle.com/tokenized/usyc/smart-contracts.
+    "0x5c73e1cfdd85b7f1d608f7f7736fc8c653513b7a", # Teller (USDC)
+    "0x5575a88bec5b47ce8d270f6a4f2418865f16afd5", # Cross Chain Teller (USDC)
+]
+notes = """
+Excluded: Usual's Treasury, which holds USYC as collateral for the USD0
+stablecoin (docs.usual.money).
+
+Issuer addresses: the Tellers Circle lists for USYC subscriptions and
+redemptions. No bridge contract appears among the largest holders or the most
+frequent senders to the zero address.
+"""
+
+[[asset]]
+uid = "ethereum:0x43415eb6ff9db7e26a15b704e7a3edce97d31c4e"  # USTB
+excluded_contracts = [
+    "0x569d7dccbf6923350521ecbc28a555a500c4f0ec", # Etherscan: "Midas: Instant Redemption Vault"
+]
+issuer_addresses = [
+    # Listed by Superstate at docs.superstate.com/investors/smart-contracts.
+    "0x4c21b7577c8fe8b0b0669165ee7c8f67fa1454cf", # USTB RedemptionIdle Proxy
+]
+notes = """
+Excluded: the Midas Instant Redemption Vault, which holds USTB as redemption
+liquidity for mTBILL holders. It belongs to Midas rather than to Superstate,
+so for USTB it is a third-party pool.
+
+Issuer address: Superstate's RedemptionIdle contract, which receives redeemed
+USTB and burns it.
+"""
+
+[[asset]]
+uid = "ethereum:0xdd629e5241cbc5919847783e6c96b2de4754e438"  # mTBILL
+excluded_contracts = []
+issuer_addresses = [
+    # Listed by Midas at docs.midas.app/resources/smart-contracts-registry.
+    "0x99361435420711723af805f08187c9e6bf796683", # mTBILL Issuance vault
+    "0x569d7dccbf6923350521ecbc28a555a500c4f0ec", # mTBILL Instant Redemption vault
+    "0x9b2c5e30e3b1f6369fc746a1c1e47277396af15d", # mEDGE Redemption Vault
+    "0xac14a14f578c143625fc8f54218911e8f634184d", # mMEV Redemption Vault
+    "0x0d89c1c4799353f3805a3e6c4e1cbbb83217d123", # mBASIS Instant Redemption vault
+]
+notes = """
+Issuer addresses: the issuance and instant redemption vaults Midas lists for
+mTBILL, and the Midas redemption vaults for mEDGE, mMEV and mBASIS, which
+redeem mTBILL. The instant redemption vault is also on the shared exclusion
+list through USTB, so it is left out of mTBILL's holders as well.
+"""
+
+[[asset]]
+uid = "ethereum:0xdd50c053c096cb04a3e3362e2b622529ec5f2e8a"  # TBILL
+excluded_contracts = []
+issuer_addresses = [
+    "0xdd50c053c096cb04a3e3362e2b622529ec5f2e8a", # the TBILL token contract itself
+]
+notes = """
+Issuer address: the TBILL token contract, which receives TBILL from holders
+and burns it.
+"""
+
+[[asset]]
+uid = "ethereum:0x530824da86689c9c17cdc2871ff29b058345b44a"  # STBT
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+One externally owned address, 0xd9c7daf04da823ec604ab88469df0b6f4e4fac5b,
+holds about 96% of supply. Its only counterparty is the STBT contract, but
+Matrixdock does not list it and Etherscan does not label it, so it is not an
+issuer address. STBT's ledger does not reconcile with totalSupply(), so its
+holder metrics are withheld.
+"""
+
+[[asset]]
+uid = "ethereum:0x917991d52aa2fc1b5612a6aa5e4e81d580f97532"  # ZTLN
+excluded_contracts = [
+    "0xBA12222222228d8Ba445958a75a0704d566BF2C8", # Etherscan: "Balancer: Vault"
+]
+issuer_addresses = []
+notes = """
+Excluded: the Balancer V2 Vault, which holds two thirds of supply for its
+liquidity providers. The one remaining holder covers a third of supply, below
+the 50% floor for conditional concentration.
+"""
+
+[[asset]]
+uid = "ethereum:0x48ab4e39ac59f4e88974804b04a991b3a402717f"  # FDIT
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+Two holders, both unlabelled externally owned addresses.
+"""
+
+[[asset]]
+uid = "ethereum:0x252739487c1fa66eaeae7ced41d6358ab2a6bca9"  # RCOIN
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+No pooling contract or labelled address among the holders.
+"""
+
+[[asset]]
+uid = "ethereum:0x90d53b872ce6421122b41a290acdd22a5ed931bd"  # ATT
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+No pooling contract or labelled address among the holders.
+"""
+
+[[asset]]
+uid = "ethereum:0xda2ffa104356688e74d9340519b8c17f00d7752e"  # HLSCOPE
+excluded_contracts = [
+    "0x69088d25A635D22Dcbe7C4a5C7707B9cC64bd114", # Etherscan: "Elixir: deUSD Mint and Redeem"
+]
+issuer_addresses = []
+notes = """
+Excluded: Elixir's deUSD Mint and Redeem contract, which holds HLSCOPE as
+collateral (about 3% of supply).
+"""

@@ -1,0 +1,8 @@
+# Normalize line endings in the repository to LF. CI runs on Linux; without
+# this, files authored on Windows land in the tree with CRLF and tooling that is
+# strict about formatting can disagree between local runs and CI.
+* text=auto eol=lf
+
+# Parquet fixtures are binary and must never be line-ending converted.
+*.parquet binary
+*.ipynb text eol=lf
