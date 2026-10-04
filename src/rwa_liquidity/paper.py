@@ -234,7 +234,7 @@ def build_panel(  # noqa: PLR0913 -- the three frames, what to measure, and what
     assets: Sequence[tuple[str, str]],
     windows: Sequence[Window],
     issuers: Mapping[str, Collection[str]] | None = None,
-    exclude: Collection[str] = (),
+    exclude: Mapping[str, Collection[str]] | None = None,
     missing: Mapping[str, Sequence[str]] | None = None,
     reconciliation: Mapping[str, bool | None] | None = None,
     dropped_transfers: Mapping[str, int] | None = None,
@@ -255,7 +255,8 @@ def build_panel(  # noqa: PLR0913 -- the three frames, what to measure, and what
         assets: `(asset_uid, symbol)` pairs, in the order rows should appear.
         windows: The observation windows, oldest first.
         issuers: Documented issuer addresses per asset uid.
-        exclude: Intermediary contracts left out of the retained population.
+        exclude: Intermediary contracts left out of the retained population,
+            per asset uid.
         missing: Per asset, the kinds of data that could not be fetched.
         reconciliation: Per asset, whether the ledger matched `totalSupply()`.
         dropped_transfers: Per asset, transfers dropped as larger than supply.
@@ -265,6 +266,7 @@ def build_panel(  # noqa: PLR0913 -- the three frames, what to measure, and what
         A frame with the columns of `PANEL_SCHEMA`.
     """
     issuers = issuers or {}
+    exclude = exclude or {}
     missing = missing or {}
     reconciliation = reconciliation or {}
     dropped_transfers = dropped_transfers or {}
@@ -309,7 +311,7 @@ def build_panel(  # noqa: PLR0913 -- the three frames, what to measure, and what
                     dict(zip(balances["address"], balances["balance"], strict=True)),
                     in_window,
                     supply=supply,
-                    exclude=exclude,
+                    exclude=exclude.get(uid, ()),
                 )
             )
     return pl.DataFrame(rows, schema=PANEL_SCHEMA)

@@ -157,7 +157,7 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
     mode: VolumeMode = VolumeMode.SECONDARY_ONLY,
     denomination: Denomination = Denomination.NATIVE,
     top_n: int = DEFAULT_TOP_N,
-    exclude: Collection[str] = (),
+    exclude: Mapping[str, Collection[str]] | None = None,
     unmeasured: Collection[str] = (),
     missing: Mapping[str, Sequence[str]] | None = None,
     reconciliation: Mapping[str, bool | None] | None = None,
@@ -182,7 +182,8 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
         mode: Which transfer kinds count.
         denomination: Units for the volume-based metrics.
         top_n: How many holders the concentration share covers.
-        exclude: Addresses to leave out of the holder distribution.
+        exclude: Addresses to leave out of the holder distribution, per asset
+            uid. An address listed for one asset is not excluded from another.
         unmeasured: Assets whose data could not be fetched. Their metrics are
             left undefined rather than computed from an empty frame, because an
             empty frame otherwise reads as "did not trade" -- a finding this
@@ -207,6 +208,7 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
     missing = dict(missing or {})
     reconciliation = dict(reconciliation or {})
     dropped_transfers = dict(dropped_transfers or {})
+    exclude = dict(exclude or {})
     unknown = set(unmeasured) | set(missing)
     reports: list[AssetReport] = []
 
@@ -219,6 +221,7 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
         asset_snapshots = _for_asset(snapshots, str(asset_uid))
         asset_transfers = _for_asset(transfers, str(asset_uid))
         asset_holders = _for_asset(holders, str(asset_uid))
+        asset_exclude = exclude.get(str(asset_uid), ())
 
         if str(asset_uid) in unknown:
             symbols = [s for s in asset_snapshots["symbol"].to_list() if s]
@@ -282,10 +285,10 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
         )
         if not asset_holders.is_empty():
             metrics["top_10_holder_share"] = top_holder_share(
-                asset_holders, asset_snapshots, window=window, n=top_n, exclude=exclude
+                asset_holders, asset_snapshots, window=window, n=top_n, exclude=asset_exclude
             )
             metrics["holder_hhi"] = holder_hhi(
-                asset_holders, asset_snapshots, window=window, exclude=exclude
+                asset_holders, asset_snapshots, window=window, exclude=asset_exclude
             )
             # No transfer guard here either. Dormancy takes its asset identity
             # from the holder frame, and holders with no transfers at all are
@@ -297,16 +300,16 @@ def build_report(  # noqa: PLR0913 -- the three frames plus the three knobs that
                 asset_snapshots,
                 window=window,
                 mode=mode,
-                exclude=exclude,
+                exclude=asset_exclude,
             )
             metrics["retained_coverage"] = retained_coverage(
-                asset_holders, asset_snapshots, window=window, exclude=exclude
+                asset_holders, asset_snapshots, window=window, exclude=asset_exclude
             )
             metrics["top_10_holder_share_conditional"] = top_holder_share_conditional(
-                asset_holders, asset_snapshots, window=window, n=top_n, exclude=exclude
+                asset_holders, asset_snapshots, window=window, n=top_n, exclude=asset_exclude
             )
             metrics["holder_hhi_conditional"] = holder_hhi_conditional(
-                asset_holders, asset_snapshots, window=window, exclude=exclude
+                asset_holders, asset_snapshots, window=window, exclude=asset_exclude
             )
 
         reconciled = reconciliation.get(str(asset_uid))

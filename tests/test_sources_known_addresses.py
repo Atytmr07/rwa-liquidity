@@ -81,17 +81,16 @@ def test_notes_alone_with_no_addresses_is_allowed() -> None:
     assert entry.excluded_contracts == ()
 
 
-def test_excluded_contracts_flattens_across_assets() -> None:
+def test_excluded_contracts_keys_by_uid() -> None:
     other = {
         "uid": "ethereum:0x01995a697752266d8e748738aaa3f06464b8350b",
         "excluded_contracts": ["0x151f7c3fB28Bc6f858d67a5e298B7b4f57592b54"],
         "notes": "Uniswap V2: CANA-AJNA pool.",
     }
     entries = _parse({**VALID, "asset": [ENTRY, other]})
-    flat = excluded_contracts(entries)
-    assert flat == {
-        "0x1dd7950c266fb1be96180a8fdb0591f70200e018",
-        "0x151f7c3fb28bc6f858d67a5e298b7b4f57592b54",
+    assert excluded_contracts(entries) == {
+        ENTRY["uid"]: ("0x1dd7950c266fb1be96180a8fdb0591f70200e018",),
+        other["uid"]: ("0x151f7c3fb28bc6f858d67a5e298b7b4f57592b54",),
     }
 
 

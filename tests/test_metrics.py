@@ -815,7 +815,7 @@ def test_the_exported_row_carries_blocks_reconciliation_drops_and_coverage() -> 
         reconciliation={ASSET: True},
         dropped_transfers={ASSET: 2},
         blocks=(100, 199, 250),
-        exclude=[A],
+        exclude={ASSET: [A]},
     )
     row = report_frame([report]).row(0, named=True)
     assert (row["start_block"], row["end_block"], row["head_block"]) == (100, 199, 250)

@@ -158,15 +158,16 @@ def load_known_addresses() -> Sequence[KnownAddressesEntry]:
     return _parse(document)
 
 
-def excluded_contracts(entries: Sequence[KnownAddressesEntry]) -> frozenset[str]:
-    """Flatten every entry's `excluded_contracts` into one address set.
+def excluded_contracts(entries: Sequence[KnownAddressesEntry]) -> dict[str, tuple[str, ...]]:
+    """Return each asset's `excluded_contracts`, keyed by uid.
 
-    `build_report`'s `exclude` parameter is not per-asset -- it is applied to
-    every asset in one pass -- which is safe here because contract addresses
-    are globally unique: one asset's pool address will never coincide with
-    another asset's holder.
+    Exclusions apply only to the asset they are listed under: a contract that
+    pools one asset can hold another asset as an ordinary holder or as the
+    issuer's own vault.
     """
-    return frozenset(address for entry in entries for address in entry.excluded_contracts)
+    return {
+        entry.ref.uid: entry.excluded_contracts for entry in entries if entry.excluded_contracts
+    }
 
 
 def issuer_addresses(entries: Sequence[KnownAddressesEntry]) -> dict[str, tuple[str, ...]]:

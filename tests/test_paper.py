@@ -180,7 +180,7 @@ def test_participation_counts_only_holders_in_positive_value_non_self_residual_t
 
 def test_the_papers_pooled_contract_example() -> None:
     # Section 5.2: a pool holds two-thirds of supply, one direct address the rest.
-    row = panel_row(transfers(), 3.0, {POOL: 2.0, ALICE: 1.0}, exclude=[POOL.upper()])
+    row = panel_row(transfers(), 3.0, {POOL: 2.0, ALICE: 1.0}, exclude={UID: [POOL.upper()]})
     assert row["h_all"] == pytest.approx(5555.56, abs=0.01)
     assert row["coverage"] == pytest.approx(1 / 3)
     assert row["h_ret"] == pytest.approx(1111.11, abs=0.01)
@@ -192,7 +192,7 @@ def test_the_papers_pooled_contract_example() -> None:
 
 def test_retained_concentration_factors_into_coverage_and_conditional() -> None:
     row = panel_row(
-        transfers(), 10.0, {POOL: 4.0, ALICE: 3.0, BOB: 2.0, CAROL: 1.0}, exclude=[POOL]
+        transfers(), 10.0, {POOL: 4.0, ALICE: 3.0, BOB: 2.0, CAROL: 1.0}, exclude={UID: [POOL]}
     )
     assert row["h_ret"] == pytest.approx(row["coverage"] ** 2 * row["h_cond"])  # type: ignore[operator]
 
@@ -306,14 +306,14 @@ def two_month_panel() -> pl.DataFrame:
         balances,
         assets=[(UID, "OUSG"), (BUIDL_UID, "BUIDL")],
         windows=[JULY, WINDOW],
-        exclude=[POOL],
+        exclude={UID: [POOL]},
     )
 
 
 def test_conditional_concentration_is_withheld_below_half_coverage() -> None:
     # ZTLN: once the Balancer vault is excluded, one address holds a third of
     # supply. Its conditional HHI of 10,000 describes almost nothing.
-    row = panel_row(transfers(), 3.0, {POOL: 2.0, ALICE: 1.0}, exclude=[POOL])
+    row = panel_row(transfers(), 3.0, {POOL: 2.0, ALICE: 1.0}, exclude={UID: [POOL]})
     assert row["coverage"] == pytest.approx(1 / 3)
     assert row["assessable"] is False
     assert row["h_cond"] is None
@@ -321,8 +321,31 @@ def test_conditional_concentration_is_withheld_below_half_coverage() -> None:
     assert row["h_ret"] == pytest.approx(1111.11, abs=0.01)
 
 
+def test_an_exclusion_applies_only_to_the_asset_it_is_listed_for() -> None:
+    # The Midas vault pools USTB but is mTBILL's own redemption vault; leaving
+    # it out of USTB's holders must not leave it out of mTBILL's.
+    other = BUIDL_UID
+    balances = pl.concat(
+        [
+            holders({POOL: 2.0, ALICE: 2.0}),
+            holders({POOL: 1.0, BOB: 3.0}).with_columns(pl.lit(other).alias("asset_uid")),
+        ]
+    )
+    supplies = pl.concat([supply(4.0), supply(4.0).with_columns(pl.lit(other).alias("asset_uid"))])
+    panel = build_panel(
+        supplies,
+        transfers(),
+        balances,
+        assets=[(UID, "OUSG"), (other, "BUIDL")],
+        windows=[WINDOW],
+        exclude={UID: [POOL]},
+    )
+    coverage = dict(zip(panel["symbol"], panel["coverage"], strict=True))
+    assert coverage == {"OUSG": pytest.approx(0.5), "BUIDL": pytest.approx(1.0)}
+
+
 def test_half_coverage_is_still_assessable() -> None:
-    row = panel_row(transfers(), 4.0, {POOL: 2.0, ALICE: 1.0, BOB: 1.0}, exclude=[POOL])
+    row = panel_row(transfers(), 4.0, {POOL: 2.0, ALICE: 1.0, BOB: 1.0}, exclude={UID: [POOL]})
     assert row["assessable"] is True
     assert row["h_cond"] == pytest.approx(5000.0)
 

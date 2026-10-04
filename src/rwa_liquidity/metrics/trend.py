@@ -130,7 +130,7 @@ def build_trend(  # noqa: PLR0913 -- the three frames, the window geometry, and
     windows: Sequence[Window],
     metric: str = "turnover_ratio",
     mode: VolumeMode = VolumeMode.SECONDARY_ONLY,
-    exclude: Collection[str] = (),
+    exclude: Mapping[str, Collection[str]] | None = None,
     unmeasured: Collection[str] = (),
     missing: Mapping[str, Sequence[str]] | None = None,
     reconciliation: Mapping[str, bool | None] | None = None,
@@ -149,7 +149,8 @@ def build_trend(  # noqa: PLR0913 -- the three frames, the window geometry, and
         windows: The periods to measure, oldest first.
         metric: Which metric to track, named as in `METRIC_COLUMNS`.
         mode: Which transfer kinds count.
-        exclude: Addresses to leave out of the holder distribution -- see
+        exclude: Addresses to leave out of the holder distribution, per asset
+            uid -- see
             `build_report`.
         unmeasured: Assets whose data could not be fetched.
         missing: Per asset, which kinds of data could not be fetched -- see

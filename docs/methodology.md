@@ -117,7 +117,8 @@ with `n = 10` by default. Burn addresses are never counted as holders.
 Contracts that hold the token on behalf of many end holders, such as pools,
 lending vaults, wrappers and bridges, can be excluded through the `exclude`
 argument. The library excludes nothing by default; the CLI excludes the
-contracts listed in `known_addresses.toml`, each with its Etherscan label.
+contracts listed in `known_addresses.toml`, each with its Etherscan label, from
+the asset they are listed under only.
 Issuer treasuries and custodians are not excluded, since each is one economic
 entity.
 

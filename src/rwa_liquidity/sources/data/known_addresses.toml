@@ -4,7 +4,7 @@
 #   holders, such as pools, vaults, wrappers and bridges. They are left out of
 #   the retained holder population. Full-supply metrics still divide by total
 #   supply, and retained coverage is reported beside them
-#   (docs/methodology.md, section 2.4). The list is shared across assets.
+#   (docs/methodology.md, section 2.4). Each list applies only to its asset.
 #
 # issuer_addresses: addresses that belong to the asset's own issuer, either in
 #   the issuer's published list of contracts or by the issuer's Etherscan
@@ -101,15 +101,20 @@ excluded_contracts = [
 ]
 issuer_addresses = [
     # Listed by Circle at developers.circle.com/tokenized/usyc/smart-contracts.
-    "0x5c73e1cfdd85b7f1d608f7f7736fc8c653513b7a", # Teller (USDC)
-    "0x5575a88bec5b47ce8d270f6a4f2418865f16afd5", # Cross Chain Teller (USDC)
+    "0xee35f963bfc71b51ec95147f26c030d674ea30e6", # Teller (USDC)
+    "0x5dbeccecebcdc2ce3258f6e638373d2923560c7d", # Cross Chain Teller (USDC)
+    # Listed on earlier versions of the same page (Internet Archive).
+    "0x5c73e1cfdd85b7f1d608f7f7736fc8c653513b7a", # Teller (USDC), September 2025
+    "0x5575a88bec5b47ce8d270f6a4f2418865f16afd5", # Cross Chain Teller (USDC), January 2026
 ]
 notes = """
 Excluded: Usual's Treasury, which holds USYC as collateral for the USD0
 stablecoin (docs.usual.money).
 
 Issuer addresses: the Tellers Circle lists for USYC subscriptions and
-redemptions. No bridge contract appears among the largest holders or the most
+redemptions, and the two earlier Tellers that the page listed in September 2025
+(web.archive.org/web/20250917060526) and January 2026
+(web.archive.org/web/20260113065714). No bridge contract appears among the largest holders or the most
 frequent senders to the zero address.
 """
 
@@ -145,8 +150,8 @@ issuer_addresses = [
 notes = """
 Issuer addresses: the issuance and instant redemption vaults Midas lists for
 mTBILL, and the Midas redemption vaults for mEDGE, mMEV and mBASIS, which
-redeem mTBILL. The instant redemption vault is also on the shared exclusion
-list through USTB, so it is left out of mTBILL's holders as well.
+redeem mTBILL. The instant redemption vault is excluded for USTB only; for
+mTBILL it is an ordinary holder.
 """
 
 [[asset]]
